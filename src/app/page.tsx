@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarDays, CreditCard, Gauge, LogOut, Plus, Save, Trash2, WalletCards } from 'lucide-react';
+import { CalendarDays, CreditCard, Gauge, Info, LogOut, Plus, Save, Trash2, WalletCards } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 
 type Debt = { id: string; name: string; balance: number; apr: number; minimum: number };
@@ -174,13 +174,13 @@ export default function Home() {
     <section className="mt-6 grid gap-6 xl:grid-cols-3">
       <Card title="Paycheck planner" className="xl:col-span-2">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="block text-xs text-slate-400">Pay frequency<select className="field mt-1 w-full" value={payFrequency} onChange={e => setPayFrequency(e.target.value as PayFrequency)}><option value="weekly">Weekly — 52 checks/year</option><option value="biweekly">Every 2 weeks — 26/year</option><option value="semimonthly">Twice monthly — 24/year</option><option value="monthly">Monthly — 12/year</option></select></label>
-          <NumberField label="Net pay per check" value={payPerCheck} onChange={setPayPerCheck}/>
-          <NumberField label="Living reserve per check" value={livingReserve} onChange={setLivingReserve}/>
-          <NumberField label="Checking balance" value={checking} onChange={setChecking}/>
-          <NumberField label="Protected checking cushion" value={checkingCushion} onChange={setCheckingCushion}/>
-          <NumberField label="Savings balance" value={savings} onChange={setSavings}/>
-          <label className="block text-xs text-slate-400">Debt strategy<select className="field mt-1 w-full" value={strategy} onChange={e => setStrategy(e.target.value as 'avalanche' | 'snowball')}><option value="avalanche">Avalanche — highest APR</option><option value="snowball">Snowball — smallest balance</option></select></label>
+          <label className="block text-xs text-slate-400"><HelpLabel label="Pay frequency" help="How often you receive your regular paycheck. This controls how DebtPilot converts monthly bills and debt minimums into a per-paycheck reserve."/><select className="field mt-1 w-full" value={payFrequency} onChange={e => setPayFrequency(e.target.value as PayFrequency)}><option value="weekly">Weekly — 52 checks/year</option><option value="biweekly">Every 2 weeks — 26/year</option><option value="semimonthly">Twice monthly — 24/year</option><option value="monthly">Monthly — 12/year</option></select></label>
+          <NumberField label="Net pay per check" help="The amount deposited after taxes, insurance, retirement contributions, and other payroll deductions." value={payPerCheck} onChange={setPayPerCheck}/>
+          <NumberField label="Living reserve per check" help="Money you want protected from each paycheck for groceries, fuel, personal spending, and other everyday costs until the next check." value={livingReserve} onChange={setLivingReserve}/>
+          <NumberField label="Checking balance" help="Your current available checking-account balance. Use the amount available to spend, not the balance before pending transactions." value={checking} onChange={setChecking}/>
+          <NumberField label="Protected checking cushion" help="The minimum balance you prefer to keep untouched in checking for unexpected expenses and timing differences." value={checkingCushion} onChange={setCheckingCushion}/>
+          <NumberField label="Savings balance" help="Your current savings balance. It is displayed in your financial picture but is not automatically used for debt payments." value={savings} onChange={setSavings}/>
+          <label className="block text-xs text-slate-400"><HelpLabel label="Debt strategy" help="Avalanche targets the highest APR to minimize interest. Snowball targets the smallest balance to create faster payoff wins."/><select className="field mt-1 w-full" value={strategy} onChange={e => setStrategy(e.target.value as 'avalanche' | 'snowball')}><option value="avalanche">Avalanche — highest APR</option><option value="snowball">Snowball — smallest balance</option></select></label>
         </div>
         <div className="mt-6 grid gap-3 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 sm:grid-cols-4">
           <Stat label={`${schedule.label} paycheck`} value={money.format(payPerCheck)}/><Stat label="Bills reserved" value={money.format(billsReserve)}/><Stat label="Living + minimums" value={money.format(livingReserve + minimumReservePerCheck)}/><Stat label="Available for debt" value={money.format(safeExtra)}/>
@@ -236,5 +236,6 @@ function Card({ title, children, className = '' }: { title: string; children: Re
 function Metric({ icon, label, value, accent = false }: { icon: React.ReactNode; label: string; value: string; accent?: boolean }) { return <div className={`rounded-2xl border p-5 ${accent ? 'border-cyan-400/30 bg-cyan-400/10' : 'border-slate-800 bg-slate-900'}`}><div className="flex items-center justify-between text-slate-400"><span>{label}</span>{icon}</div><p className="mt-3 text-2xl font-semibold">{value}</p></div>; }
 function Stat({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-medium">{value}</p></div>; }
 function Empty({ text }: { text: string }) { return <p className="rounded-xl border border-dashed border-slate-700 p-4 text-sm leading-6 text-slate-500">{text}</p>; }
+function HelpLabel({ label, help }: { label: string; help: string }) { return <span className="flex items-center gap-1.5"><span>{label}</span><span className="group relative inline-flex"><button type="button" aria-label={`About ${label}`} className="rounded-full text-slate-500 transition hover:text-cyan-300 focus:text-cyan-300"><Info size={14}/></button><span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-950 p-3 text-left text-xs leading-5 text-slate-300 shadow-xl group-hover:block group-focus-within:block">{help}</span></span></span>; }
 function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="block text-xs text-slate-400">{label}<input className="field mt-1 w-full" value={value} onChange={e => onChange(e.target.value)}/></label>; }
-function NumberField({ label, value, onChange, step = '1' }: { label: string; value: number; onChange: (value: number) => void; step?: string }) { return <label className="block text-xs text-slate-400">{label}<input className="field mt-1 w-full" type="number" step={step} value={value} onChange={e => onChange(Number(e.target.value))}/></label>; }
+function NumberField({ label, value, onChange, step = '1', help }: { label: string; value: number; onChange: (value: number) => void; step?: string; help?: string }) { return <label className="block text-xs text-slate-400">{help ? <HelpLabel label={label} help={help}/> : label}<input className="field mt-1 w-full" type="number" step={step} value={value} onChange={e => onChange(Number(e.target.value))}/></label>; }
