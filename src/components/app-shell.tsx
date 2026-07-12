@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, CalendarRange, Gauge, Inbox, Menu, Settings, Target, X } from 'lucide-react';
+import { BarChart3, CalendarRange, Car, Gauge, Inbox, Menu, Settings, Target, X } from 'lucide-react';
 import { useState } from 'react';
 
 const links = [
@@ -11,6 +11,7 @@ const links = [
   { href: '/forecast', label: 'Cash flow', icon: CalendarRange },
   { href: '/payoff', label: 'Payoff planner', icon: BarChart3 },
   { href: '/goals', label: 'Goals', icon: Target },
+  { href: '/vehicles', label: 'Vehicle planner', icon: Car },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -44,8 +45,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="absolute inset-x-5 bottom-5 space-y-3">
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-xs leading-5 text-slate-500">
-          <p className="font-medium text-slate-300">DebtPilot v0.7.0</p>
-          <p>Prioritized financial inbox and 90-day forecast.</p>
+          <p className="font-medium text-slate-300">DebtPilot v0.8.0</p>
+          <p>Vehicle decision engine and financial readiness scoring.</p>
         </div>
         <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600"><Settings size={16}/>Settings coming next</div>
       </div>
