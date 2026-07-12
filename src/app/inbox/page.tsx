@@ -10,6 +10,7 @@ type Bill = { id: string; name: string; amount: number; dueDay: number; frequenc
 type Goal = { id: string; name: string; goalType: string; target: number; current: number; priority: number };
 type Priority = 'high' | 'medium' | 'low';
 type Task = { id: string; priority: Priority; title: string; detail: string; amount?: number; href: string; action: string; icon: 'risk' | 'money' | 'goal' | 'done' };
+type Profile = { pay_frequency?: string | null; weekly_take_home?: number | string | null; checking_balance?: number | string | null; checking_cushion?: number | string | null; weekly_living_reserve?: number | string | null };
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 const schedule: Record<PayFrequency, { periods: number; days: number }> = {
@@ -36,7 +37,7 @@ function daysUntilDue(dueDay: number) {
 export default function FinancialInboxPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -66,7 +67,8 @@ export default function FinancialInboxPage() {
 
   const tasks = useMemo(() => {
     if (!profile) return [] as Task[];
-    const frequency = (schedule[profile.pay_frequency as PayFrequency] ? profile.pay_frequency : 'weekly') as PayFrequency;
+    const savedFrequency = profile.pay_frequency as PayFrequency | undefined;
+    const frequency = savedFrequency && schedule[savedFrequency] ? savedFrequency : 'weekly';
     const cycle = schedule[frequency];
     const pay = Number(profile.weekly_take_home ?? 0);
     const checking = Number(profile.checking_balance ?? 0);

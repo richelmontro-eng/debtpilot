@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, BarChart3, Beaker, Bot, CalendarRange, Car, Gauge, Inbox, Menu, ReceiptText, Settings, Target, X } from 'lucide-react';
-import { useState } from 'react';
+import { Activity, BarChart3, Beaker, Bot, CalendarRange, Car, Gauge, Inbox, LogOut, Menu, ReceiptText, Settings, Target, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { createClient } from '../lib/supabase';
 
 const links = [
   { href: '/', label: 'Dashboard', icon: Gauge },
@@ -22,7 +23,25 @@ const links = [
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const isPublic = pathname === '/login' || pathname.startsWith('/auth/');
+  const [account, setAccount] = useState({ displayName: '', email: '' });
+  const isPublic = pathname === '/login' || pathname === '/welcome' || pathname.startsWith('/auth/');
+
+  useEffect(() => {
+    const supabase = createClient();
+    if (!supabase || isPublic) return;
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase.from('profiles').select('display_name').eq('user_id', user.id).maybeSingle();
+      setAccount({ displayName: data?.display_name || user.email?.split('@')[0] || 'DebtPilot user', email: user.email ?? '' });
+    })();
+  }, [isPublic]);
+
+  async function signOut() {
+    const supabase = createClient();
+    if (supabase) await supabase.auth.signOut({ scope: 'local' });
+    window.location.assign('/login');
+  }
 
   if (isPublic) return <>{children}</>;
 
@@ -49,13 +68,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       <div className="absolute inset-x-5 bottom-5">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-xs leading-5 text-slate-500">
-          <p className="font-medium text-slate-300">DebtPilot v0.13.0</p>
-          <p>Reviewed transaction posting and atomic balance reconciliation.</p>
-        </div>
+        <AccountPanel displayName={account.displayName} email={account.email} onSignOut={signOut}/>
       </div>
     </aside>
 
     <div className="lg:pl-72">{children}</div>
   </div>;
+}
+
+export function AccountPanel({ displayName, email, onSignOut }: { displayName: string; email: string; onSignOut: () => void }) {
+  const initial = (displayName || email || 'D').charAt(0).toUpperCase();
+  return <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-cyan-400 font-semibold text-slate-950">{initial}</div><div className="min-w-0"><p className="truncate text-sm font-medium text-slate-200">{displayName || 'DebtPilot user'}</p><p className="truncate text-xs text-slate-500">{email}</p></div></div><div className="mt-4 grid gap-2"><Link href="/settings" className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 hover:bg-slate-800"><Settings size={15}/>Settings</Link><button type="button" onClick={onSignOut} className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-rose-300 hover:bg-rose-400/10"><LogOut size={15}/>Sign Out</button></div></div>;
 }

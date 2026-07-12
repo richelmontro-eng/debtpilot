@@ -10,6 +10,7 @@ type Debt = { id: string; name: string; balance: number; apr: number; minimum: n
 type Bill = { id: string; name: string; amount: number; dueDay: number; frequency: string };
 type Goal = { id: string; name: string; goalType: string; target: number; current: number; priority: number };
 type Snapshot = { date: string; assets: number; debt: number; netWorth: number; health: number };
+type Profile = { display_name?: string | null; pay_frequency?: string | null; weekly_take_home?: number | string | null; checking_balance?: number | string | null; savings_balance?: number | string | null; checking_cushion?: number | string | null; weekly_living_reserve?: number | string | null; preferred_strategy?: string | null };
 
 type Focus = {
   title: string;
@@ -44,7 +45,7 @@ function daysUntilDue(dueDay: number) {
 export default function PilotPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -85,7 +86,8 @@ export default function PilotPage() {
   }, []);
 
   const review = useMemo(() => {
-    const frequency = (paySchedules[profile?.pay_frequency as PayFrequency] ? profile.pay_frequency : 'weekly') as PayFrequency;
+    const savedFrequency = profile?.pay_frequency as PayFrequency | undefined;
+    const frequency = savedFrequency && paySchedules[savedFrequency] ? savedFrequency : 'weekly';
     const schedule = paySchedules[frequency];
     const payPerCheck = Number(profile?.weekly_take_home ?? 0);
     const checking = Number(profile?.checking_balance ?? 0);

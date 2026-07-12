@@ -14,7 +14,10 @@ export default function AuthCallbackPage() {
     }
 
     const finish = async () => {
-      const { data, error } = await supabase.auth.getSession();
+      const code = new URLSearchParams(window.location.search).get('code');
+      const { data, error } = code
+        ? await supabase.auth.exchangeCodeForSession(code)
+        : await supabase.auth.getSession();
       if (error) {
         setMessage(error.message);
         return;

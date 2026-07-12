@@ -2,10 +2,40 @@ export type ForecastBill = { id: string; name: string; amount: number; dueDay: n
 export type ForecastFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 export type ForecastEvent = { date: Date; label: string; amount: number; type: 'income' | 'bill'; balance: number };
 
-const cycleDays: Record<ForecastFrequency, number> = { weekly: 7, biweekly: 14, semimonthly: 15, monthly: 30 };
-
 function atMidnight(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function payDates(frequency: ForecastFrequency, start: Date, end: Date) {
+  const dates: Date[] = [];
+  if (frequency === 'weekly' || frequency === 'biweekly') {
+    const days = frequency === 'weekly' ? 7 : 14;
+    for (let date = addDays(start, days); date <= end; date = addDays(date, days)) dates.push(date);
+    return dates;
+  }
+
+  if (frequency === 'monthly') {
+    const anchorDay = start.getDate();
+    for (let offset = 1; ; offset += 1) {
+      const lastDay = new Date(start.getFullYear(), start.getMonth() + offset + 1, 0).getDate();
+      const date = new Date(start.getFullYear(), start.getMonth() + offset, Math.min(anchorDay, lastDay));
+      if (date > end) break;
+      dates.push(date);
+    }
+    return dates;
+  }
+
+  // Semimonthly pay occurs twice per calendar month and must not drift like a 15-day cycle.
+  let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (cursor <= end) {
+    const lastDay = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+    for (const day of [15, lastDay]) {
+      const date = new Date(cursor.getFullYear(), cursor.getMonth(), day);
+      if (date > start && date <= end) dates.push(date);
+    }
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+  return dates;
 }
 
 function addDays(date: Date, days: number) {
@@ -38,12 +68,13 @@ export function buildForecast(input: {
   payFrequency: ForecastFrequency;
   bills: ForecastBill[];
   days?: number;
+  startDate?: Date;
 }) {
-  const start = atMidnight(new Date());
+  const start = atMidnight(input.startDate ?? new Date());
   const end = addDays(start, input.days ?? 90);
   const raw: Omit<ForecastEvent, 'balance'>[] = [];
 
-  for (let date = addDays(start, cycleDays[input.payFrequency]); date <= end; date = addDays(date, cycleDays[input.payFrequency])) {
+  for (const date of payDates(input.payFrequency, start, end)) {
     raw.push({ date, label: 'Paycheck', amount: input.payPerCheck, type: 'income' });
   }
 

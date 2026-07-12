@@ -19,6 +19,16 @@ type Snapshot = {
 
 type Debt = { balance: number; minimum: number; apr: number };
 type Goal = { goalType: string; target: number; current: number };
+type Profile = {
+  display_name?: string | null;
+  checking_balance?: number | string | null;
+  savings_balance?: number | string | null;
+  checking_cushion?: number | string | null;
+  weekly_take_home?: number | string | null;
+  pay_frequency?: string | null;
+  investment_balance?: number | string | null;
+  other_assets?: number | string | null;
+};
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
@@ -27,7 +37,7 @@ export default function InsightsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [userId, setUserId] = useState('');
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);

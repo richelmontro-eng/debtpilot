@@ -6,6 +6,18 @@ import { createClient } from '@/lib/supabase';
 
 type TransactionType = 'income' | 'expense' | 'bill_payment' | 'debt_payment' | 'transfer' | 'refund' | 'bonus';
 type Debt = { id: string; name: string; balance: number };
+type TransactionRow = {
+  id: string;
+  transaction_date: string;
+  transaction_type: TransactionType;
+  description: string;
+  category: string;
+  account: string;
+  amount: number | string;
+  notes: string | null;
+  posted_at: string | null;
+  debt_id: string | null;
+};
 
 type Transaction = {
   id: string;
@@ -26,7 +38,7 @@ const typeLabels: Record<TransactionType, string> = {
 };
 const positiveTypes = new Set<TransactionType>(['income', 'refund', 'bonus']);
 
-function mapTransaction(row: any): Transaction {
+function mapTransaction(row: TransactionRow): Transaction {
   return {
     id: row.id,
     date: row.transaction_date,

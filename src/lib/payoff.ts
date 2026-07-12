@@ -19,9 +19,15 @@ export function simulatePayoff(
   strategy: 'avalanche' | 'snowball',
   maxMonths = 600,
 ): PayoffResult {
+  const safeExtra = Number.isFinite(monthlyExtra) ? Math.max(0, monthlyExtra) : 0;
   const debts = sourceDebts
-    .filter(debt => debt.balance > 0)
-    .map(debt => ({ ...debt, balance: Math.max(0, debt.balance), minimum: Math.max(0, debt.minimum), apr: Math.max(0, debt.apr) }));
+    .filter(debt => Number.isFinite(debt.balance) && debt.balance > 0)
+    .map(debt => ({
+      ...debt,
+      balance: Math.max(0, debt.balance),
+      minimum: Number.isFinite(debt.minimum) ? Math.max(0, debt.minimum) : 0,
+      apr: Number.isFinite(debt.apr) ? Math.max(0, debt.apr) : 0,
+    }));
 
   if (!debts.length) {
     return { months: 0, totalInterest: 0, debtFreeDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }), paidOff: true };
@@ -40,7 +46,7 @@ export function simulatePayoff(
       totalInterest += interest;
     }
 
-    let paymentPool = debts.reduce((sum, debt) => sum + (debt.balance > 0 ? debt.minimum : 0), 0) + Math.max(0, monthlyExtra);
+    let paymentPool = debts.reduce((sum, debt) => sum + (debt.balance > 0 ? debt.minimum : 0), 0) + safeExtra;
 
     for (const debt of debts) {
       if (debt.balance <= 0 || paymentPool <= 0) continue;
@@ -60,9 +66,9 @@ export function simulatePayoff(
       paymentPool -= payment;
     }
 
-    const requiredInterest = debts.reduce((sum, debt) => sum + debt.balance * (debt.apr / 100 / 12), 0);
-    const totalPlannedPayment = debts.reduce((sum, debt) => sum + (debt.balance > 0 ? debt.minimum : 0), 0) + Math.max(0, monthlyExtra);
-    if (totalPlannedPayment <= requiredInterest && debts.some(debt => debt.balance > 0)) {
+    const nextMonthInterest = debts.reduce((sum, debt) => sum + debt.balance * (debt.apr / 100 / 12), 0);
+    const nextMonthPayment = debts.reduce((sum, debt) => sum + (debt.balance > 0 ? debt.minimum : 0), 0) + safeExtra;
+    if (nextMonthPayment <= nextMonthInterest && debts.some(debt => debt.balance > 0)) {
       return { months: month, totalInterest, debtFreeDate: null, paidOff: false };
     }
   }

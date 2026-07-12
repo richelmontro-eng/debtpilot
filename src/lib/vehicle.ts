@@ -37,7 +37,7 @@ export type VehicleDecision = {
 };
 
 export function monthlyLoanPayment(principal: number, annualRate: number, months: number) {
-  if (principal <= 0 || months <= 0) return 0;
+  if (!Number.isFinite(principal) || !Number.isFinite(annualRate) || !Number.isFinite(months) || principal <= 0 || months <= 0) return 0;
   const monthlyRate = Math.max(0, annualRate) / 100 / 12;
   if (monthlyRate === 0) return principal / months;
   return principal * monthlyRate / (1 - Math.pow(1 + monthlyRate, -months));
@@ -46,9 +46,13 @@ export function monthlyLoanPayment(principal: number, annualRate: number, months
 export function evaluateVehicle(scenario: VehicleScenario, finances: FinancialContext): VehicleDecision {
   const taxablePrice = Math.max(0, scenario.price - scenario.tradeIn);
   const tax = taxablePrice * Math.max(0, scenario.taxRate) / 100;
-  const amountFinanced = Math.max(0, scenario.price + tax + scenario.fees - scenario.downPayment - scenario.tradeIn);
+  // Fees are treated as cash due at signing below, so they must not also be financed.
+  const amountFinanced = Math.max(0, scenario.price + tax - scenario.downPayment - scenario.tradeIn);
   const paymentMonthly = monthlyLoanPayment(amountFinanced, scenario.apr, scenario.termMonths);
-  const ownershipMonthly = paymentMonthly + scenario.insuranceMonthly + scenario.fuelMonthly + scenario.maintenanceMonthly;
+  const ownershipMonthly = paymentMonthly
+    + Math.max(0, scenario.insuranceMonthly)
+    + Math.max(0, scenario.fuelMonthly)
+    + Math.max(0, scenario.maintenanceMonthly);
   const ownershipWeekly = ownershipMonthly * 12 / 52;
   const totalLoanInterest = Math.max(0, paymentMonthly * scenario.termMonths - amountFinanced);
   const cashDueAtPurchase = Math.max(0, scenario.downPayment + scenario.fees);
