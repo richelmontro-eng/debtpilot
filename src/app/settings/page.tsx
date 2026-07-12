@@ -1,0 +1,84 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { LogOut, Save, Settings } from 'lucide-react';
+import { createClient } from '@/lib/supabase';
+
+type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
+type Strategy = 'avalanche' | 'snowball';
+
+export default function SettingsPage() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [userId, setUserId] = useState('');
+  const [email, setEmail] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [payFrequency, setPayFrequency] = useState<PayFrequency>('weekly');
+  const [strategy, setStrategy] = useState<Strategy>('avalanche');
+  const [cushion, setCushion] = useState(0);
+  const [livingReserve, setLivingReserve] = useState(0);
+
+  useEffect(() => {
+    const supabase = createClient();
+    if (!supabase) { setMessage('Supabase is not configured.'); setLoading(false); return; }
+    (async () => {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) { window.location.assign('/login'); return; }
+      setUserId(user.id);
+      setEmail(user.email ?? '');
+      const { data, error } = await supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
+      if (error) setMessage(`Load failed: ${error.message}`);
+      if (data) {
+        setDisplayName(data.display_name ?? '');
+        setPayFrequency((data.pay_frequency ?? 'weekly') as PayFrequency);
+        setStrategy(data.preferred_strategy === 'snowball' ? 'snowball' : 'avalanche');
+        setCushion(Number(data.checking_cushion ?? 0));
+        setLivingReserve(Number(data.weekly_living_reserve ?? 0));
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  async function save() {
+    const supabase = createClient();
+    if (!supabase || !userId || saving) return;
+    setSaving(true);
+    setMessage('Saving…');
+    const { error } = await supabase.from('profiles').upsert({
+      user_id: userId,
+      display_name: displayName.trim(),
+      pay_frequency: payFrequency,
+      preferred_strategy: strategy,
+      checking_cushion: Math.max(0, cushion),
+      weekly_living_reserve: Math.max(0, livingReserve),
+      updated_at: new Date().toISOString(),
+    });
+    setMessage(error ? `Save failed: ${error.message}` : 'Settings saved successfully.');
+    setSaving(false);
+  }
+
+  async function signOut() {
+    const supabase = createClient();
+    if (supabase) await supabase.auth.signOut({ scope: 'local' });
+    window.location.assign('/login');
+  }
+
+  if (loading) return <main className="grid min-h-screen place-items-center bg-slate-950 text-slate-100">Loading settings…</main>;
+
+  return <main className="min-h-screen bg-slate-950 text-slate-100"><div className="mx-auto max-w-5xl px-5 py-8">
+    <header className="mb-8"><div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300"><Settings size={16}/> Settings</div><h1 className="text-4xl font-semibold">Your financial preferences.</h1><p className="mt-3 text-slate-400">These defaults are used across the dashboard, recommendations, payoff planner, forecast, and What-If Lab.</p></header>
+    {message && <p role="status" className="mb-6 rounded-xl border border-slate-700 bg-slate-900 p-4 text-sm text-slate-300">{message}</p>}
+    <section className="grid gap-6 lg:grid-cols-2">
+      <Card title="Profile"><Field label="Display name"><input className="field mt-1 w-full" value={displayName} onChange={e => setDisplayName(e.target.value)}/></Field><Field label="Email"><input className="field mt-1 w-full opacity-70" value={email} disabled/></Field></Card>
+      <Card title="Paycheck preferences"><Field label="Pay frequency"><select className="field mt-1 w-full" value={payFrequency} onChange={e => setPayFrequency(e.target.value as PayFrequency)}><option value="weekly">Weekly — 52 checks/year</option><option value="biweekly">Every 2 weeks — 26/year</option><option value="semimonthly">Twice monthly — 24/year</option><option value="monthly">Monthly — 12/year</option></select></Field><NumberField label="Living reserve per check" value={livingReserve} onChange={setLivingReserve}/></Card>
+      <Card title="Financial guardrails"><NumberField label="Protected checking cushion" value={cushion} onChange={setCushion}/><Field label="Debt payoff strategy"><select className="field mt-1 w-full" value={strategy} onChange={e => setStrategy(e.target.value as Strategy)}><option value="avalanche">Avalanche — highest APR first</option><option value="snowball">Snowball — smallest balance first</option></select></Field></Card>
+      <Card title="About DebtPilot"><p className="text-2xl font-semibold">Version 0.9.0</p><p className="mt-3 text-sm leading-6 text-slate-400">Includes paycheck planning, goals, payoff projections, a 90-day forecast, financial inbox, saved vehicle comparisons, and the What-If Lab.</p><button onClick={signOut} className="mt-5 inline-flex items-center gap-2 rounded-xl border border-rose-400/25 px-4 py-3 text-sm text-rose-300"><LogOut size={17}/>Sign out</button></Card>
+    </section>
+    <div className="mt-6 flex justify-end"><button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 disabled:opacity-60"><Save size={18}/>{saving ? 'Saving…' : 'Save settings'}</button></div>
+  </div></main>;
+}
+
+function Card({ title, children }: { title: string; children: React.ReactNode }) { return <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6"><h2 className="mb-5 text-2xl font-semibold">{title}</h2><div className="space-y-4">{children}</div></section>; }
+function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block text-xs text-slate-400">{label}{children}</label>; }
+function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) { return <Field label={label}><input className="field mt-1 w-full" type="number" min="0" value={value} onChange={e => onChange(Number(e.target.value))}/></Field>; }
