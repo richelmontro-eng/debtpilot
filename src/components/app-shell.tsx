@@ -13,6 +13,7 @@ const links = [
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/vehicles', label: 'Vehicle planner', icon: Car },
   { href: '/what-if', label: 'What-If Lab', icon: Beaker },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -44,12 +45,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         })}
       </nav>
 
-      <div className="absolute inset-x-5 bottom-5 space-y-3">
+      <div className="absolute inset-x-5 bottom-5">
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-xs leading-5 text-slate-500">
-          <p className="font-medium text-slate-300">DebtPilot v0.8.1</p>
-          <p>Saved vehicle comparisons and live what-if scenarios.</p>
+          <p className="font-medium text-slate-300">DebtPilot v0.9.0</p>
+          <p>Settings, saved vehicle comparisons, and live what-if scenarios.</p>
         </div>
-        <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600"><Settings size={16}/>Settings coming next</div>
       </div>
     </aside>
 
