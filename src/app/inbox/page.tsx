@@ -18,6 +18,7 @@ const schedule: Record<PayFrequency, { periods: number; days: number }> = {
   semimonthly: { periods: 24, days: 15 },
   monthly: { periods: 12, days: 30 },
 };
+const priorityOrder: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
 function daysUntilDue(dueDay: number) {
@@ -105,7 +106,7 @@ export default function FinancialInboxPage() {
     if (!goals.length) items.push({ id: 'add-goals', priority: 'low', title: 'Create your first financial goal', detail: 'Goals let recommendations balance debt reduction with savings priorities.', href: '/goals', action: 'Create goal', icon: 'goal' });
 
     if (!items.length) items.push({ id: 'clear', priority: 'low', title: 'No urgent actions found', detail: 'Your current bills, cushion, debt minimums, and saved goals appear covered for this paycheck cycle.', href: '/forecast', action: 'Review forecast', icon: 'done' });
-    return items.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] - ({ high: 0, medium: 1, low: 2 }[b.priority]));
+    return items.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
   }, [profile, debts, bills, goals]);
 
   const visible = tasks.filter(task => !reviewed.includes(task.id));
