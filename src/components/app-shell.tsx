@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, BarChart3, Beaker, Bot, CalendarRange, Car, Gauge, Inbox, Menu, Settings, Target, X } from 'lucide-react';
+import { Activity, BarChart3, Beaker, Bot, CalendarRange, Car, Gauge, Inbox, Menu, ReceiptText, Settings, Target, X } from 'lucide-react';
 import { useState } from 'react';
 
 const links = [
   { href: '/', label: 'Dashboard', icon: Gauge },
   { href: '/pilot', label: 'Pilot advisor', icon: Bot },
+  { href: '/transactions', label: 'Transactions', icon: ReceiptText },
   { href: '/inbox', label: 'Financial inbox', icon: Inbox },
   { href: '/forecast', label: 'Cash flow', icon: CalendarRange },
   { href: '/insights', label: 'Net worth & health', icon: Activity },
@@ -49,8 +50,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="absolute inset-x-5 bottom-5">
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-xs leading-5 text-slate-500">
-          <p className="font-medium text-slate-300">DebtPilot v0.11.0</p>
-          <p>Pilot weekly advisor, grounded recommendations, and progress review.</p>
+          <p className="font-medium text-slate-300">DebtPilot v0.12.0</p>
+          <p>Manual transaction ledger and execution tracking.</p>
         </div>
       </div>
     </aside>
