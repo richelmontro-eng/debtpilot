@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, BarChart3, Beaker, Bot, CalendarRange, Car, Gauge, Inbox, LogOut, Menu, ReceiptText, Settings, Target, X } from 'lucide-react';
+import { Activity, BarChart3, Beaker, Bot, CalendarRange, Car, Gauge, Inbox, LogOut, Menu, ReceiptText, Settings, ShoppingBag, Target, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createClient } from '../lib/supabase';
 import { APP_VERSION } from '../lib/version';
 
 const links = [
   { href: '/', label: 'Dashboard', icon: Gauge },
+  { href: '/before-you-buy', label: 'Before You Buy', icon: ShoppingBag },
   { href: '/pilot', label: 'Pilot advisor', icon: Bot },
   { href: '/transactions', label: 'Transactions', icon: ReceiptText },
   { href: '/inbox', label: 'Financial inbox', icon: Inbox },

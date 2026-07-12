@@ -27,6 +27,7 @@ Status legend: ✅ Completed · 🚧 In progress · 🗓️ Planned
 ## Milestone 3 — Decision Center
 
 - 🚧 What-if and payoff comparison foundations
+- ✅ Before You Buy deterministic purchase decision report
 - 🗓️ Saved decisions and scenario comparison history
 - 🗓️ Tradeoff views across debt, cash reserves, and goals
 - 🗓️ Decision reminders and outcome review

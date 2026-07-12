@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21.0 — Before You Buy
+
+- Added deterministic purchase decision intelligence for cash and financed purchases.
+- Added before/after health, cash, emergency-fund, debt-free, and goal-delay impacts.
+- Added Pilot explanations, alternatives, and account-scoped local scenario saving without a database migration.
+
 ## 0.20.0 — Financial Intelligence milestone
 
 - Completed the financial briefing dashboard with health, safe-cash status, deterministic insights, grouped timeline, and missing-information guidance.
