@@ -17,7 +17,6 @@ const links = [
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/vehicles', label: 'Vehicle planner', icon: Car },
   { href: '/what-if', label: 'What-If Lab', icon: Beaker },
-  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

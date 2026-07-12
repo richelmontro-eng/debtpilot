@@ -33,6 +33,10 @@ function daysUntilDue(dueDay: number) {
 
 type SaveResult<T> = { items: T[]; error: PostgrestError | null };
 
+function isMissingRecommendationHistory(error: PostgrestError | null) {
+  return error?.code === '42P01' || error?.code === 'PGRST205';
+}
+
 async function saveDebtsSafely(supabase: SupabaseClient, userId: string, debts: Debt[]): Promise<SaveResult<Debt>> {
   const { data: existing, error: readError } = await supabase.from('debts').select('id').eq('user_id', userId);
   if (readError) return { items: debts, error: readError };
@@ -102,6 +106,7 @@ export default function Home() {
   const [completingRecommendation, setCompletingRecommendation] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
   const [recommendationHistory, setRecommendationHistory] = useState<CompletedRecommendation[]>([]);
+  const [recommendationHistoryUnavailable, setRecommendationHistoryUnavailable] = useState(false);
   const [payFrequency, setPayFrequency] = useState<PayFrequency>('weekly');
   const [payPerCheck, setPayPerCheck] = useState(0);
   const [checking, setChecking] = useState(0);
@@ -135,8 +140,13 @@ export default function Home() {
         supabase.from('goals').select('*').eq('user_id', user.id).order('priority').order('created_at'),
         supabase.from('pilot_recommendation_history').select('*').eq('user_id', user.id).order('completed_at', { ascending: false }).limit(5),
       ]);
-      const loadError = profileResult.error || debtResult.error || billResult.error || goalResult.error || historyResult.error;
+      const historyTableMissing = isMissingRecommendationHistory(historyResult.error);
+      const loadError = profileResult.error || debtResult.error || billResult.error || goalResult.error || (historyTableMissing ? null : historyResult.error);
       if (loadError) setNotice(`Load failed: ${loadError.message}`);
+      if (historyTableMissing) {
+        setRecommendationHistoryUnavailable(true);
+        if (!loadError) setNotice('Recommendation history is not available yet.');
+      }
       const profile = profileResult.data;
       if (!profile?.onboarding_completed) {
         router.replace('/welcome');
@@ -218,6 +228,12 @@ export default function Home() {
       reasoning: pilot.reasoning,
     }).select('*').single();
     if (error) {
+      if (isMissingRecommendationHistory(error)) {
+        setRecommendationHistoryUnavailable(true);
+        setNotice('Recommendation history is not available yet.');
+        setCompletingRecommendation(false);
+        return;
+      }
       setNotice(`Could not complete recommendation: ${error.message}`);
       setCompletingRecommendation(false);
       return;
@@ -251,7 +267,7 @@ export default function Home() {
     setSaving(true);
     setNotice('Saving…');
     const { error: profileError } = await supabase.from('profiles').upsert({
-      user_id: userId, pay_frequency: payFrequency, weekly_take_home: payPerCheck, checking_balance: checking,
+      user_id: userId, weekly_take_home: payPerCheck, checking_balance: checking,
       savings_balance: savings, weekly_living_reserve: livingReserve, checking_cushion: checkingCushion,
       preferred_strategy: strategy, updated_at: new Date().toISOString(),
     });
@@ -292,7 +308,7 @@ export default function Home() {
     <section className="mt-6 grid gap-6 xl:grid-cols-3">
       <Card title="Paycheck planner" className="xl:col-span-2">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="block text-xs text-slate-400"><HelpLabel label="Pay frequency" help="How often you receive your regular paycheck. This controls how monthly obligations are converted into a per-paycheck reserve."/><select className="field mt-1 w-full" value={payFrequency} onChange={e => setPayFrequency(e.target.value as PayFrequency)}><option value="weekly">Weekly — 52 checks/year</option><option value="biweekly">Every 2 weeks — 26/year</option><option value="semimonthly">Twice monthly — 24/year</option><option value="monthly">Monthly — 12/year</option></select></label>
+          <div className="block text-xs text-slate-400"><HelpLabel label="Pay frequency" help="Pay frequency is managed in Settings. DebtPilot uses it to convert monthly obligations into a per-paycheck reserve."/><div className="field mt-1 w-full text-slate-200" aria-label="Pay frequency">{schedule.label}</div></div>
           <NumberField label="Net pay per check" help="The amount deposited after taxes and payroll deductions." value={payPerCheck} onChange={setPayPerCheck}/>
           <NumberField label="Living reserve per check" help="Money protected for groceries, fuel, personal spending, and everyday expenses until the next check." value={livingReserve} onChange={setLivingReserve}/>
           <NumberField label="Checking balance" help="Your currently available checking balance after pending transactions." value={checking} onChange={setChecking}/>
@@ -311,7 +327,7 @@ export default function Home() {
         <p className="text-2xl font-semibold">{pilot.title}</p>
         <p className="mt-4 text-sm leading-6 text-slate-400">{pilot.description}</p>
         <div className="mt-5 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-4"><p className="text-xs uppercase tracking-widest text-cyan-300">Confidence</p><p className="mt-1 text-2xl font-semibold">{pilot.confidence}%</p></div><div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4"><p className="text-xs uppercase tracking-widest text-slate-500">Estimated benefit</p><p className="mt-1 text-2xl font-semibold">{money.format(pilot.estimatedBenefit)}</p></div></div>
-        <div className="mt-5 flex flex-wrap gap-3"><button type="button" aria-expanded={whyOpen} aria-controls="pilot-reasoning" onClick={() => setWhyOpen(open => !open)} className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm font-medium text-cyan-300">{whyOpen ? 'Hide details' : 'Why?'}</button><button type="button" disabled={isRecommendationComplete || completingRecommendation} onClick={markRecommendationComplete} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-default disabled:bg-emerald-400"><CheckCircle2 size={16}/>{isRecommendationComplete ? 'Completed' : 'Mark Complete'}</button></div>
+        <div className="mt-5 flex flex-wrap gap-3"><button type="button" aria-expanded={whyOpen} aria-controls="pilot-reasoning" onClick={() => setWhyOpen(open => !open)} className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm font-medium text-cyan-300">{whyOpen ? 'Hide details' : 'Why?'}</button><button type="button" disabled={recommendationHistoryUnavailable || isRecommendationComplete || completingRecommendation} onClick={markRecommendationComplete} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-default disabled:bg-emerald-400"><CheckCircle2 size={16}/>{isRecommendationComplete ? 'Completed' : 'Mark Complete'}</button></div>
         {whyOpen && <div id="pilot-reasoning" className="mt-4 rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Stat label="Confidence" value={`${pilot.confidence}%`}/>
@@ -339,7 +355,7 @@ export default function Home() {
 
     <section className="mt-6 grid gap-6 xl:grid-cols-2">
       <Card title="Recent Wins"><div className="space-y-3">{briefing.recentWins.map(win => <div key={win} className="flex gap-3 rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4"><Trophy className="mt-0.5 shrink-0 text-emerald-300" size={18}/><p className="text-sm leading-6 text-slate-300">{win}</p></div>)}</div></Card>
-      <Card title="Recommendation History">{recommendationHistory.length ? <div className="space-y-3">{recommendationHistory.slice(0, 5).map(item => <div key={item.id} className="rounded-2xl border border-slate-800 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{item.title}</p><p className="mt-1 text-xs capitalize text-slate-500">{item.category} • {new Date(item.completedAt).toLocaleDateString()}</p></div><CheckCircle2 className="shrink-0 text-emerald-300" size={19}/></div>{item.estimatedBenefit > 0 && <p className="mt-3 text-sm font-semibold text-cyan-300">{money.format(item.estimatedBenefit)} estimated benefit</p>}</div>)}</div> : <Empty text="No completed recommendations yet."/>}</Card>
+      <Card title="Recommendation History">{recommendationHistory.length ? <div className="space-y-3">{recommendationHistory.slice(0, 5).map(item => <div key={item.id} className="rounded-2xl border border-slate-800 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{item.title}</p><p className="mt-1 text-xs capitalize text-slate-500">{item.category} • {new Date(item.completedAt).toLocaleDateString()}</p></div><CheckCircle2 className="shrink-0 text-emerald-300" size={19}/></div>{item.estimatedBenefit > 0 && <p className="mt-3 text-sm font-semibold text-cyan-300">{money.format(item.estimatedBenefit)} estimated benefit</p>}</div>)}</div> : <Empty text={recommendationHistoryUnavailable ? 'Recommendation history is not available yet.' : 'No completed recommendations yet.'}/>}</Card>
     </section>
 
     {topGoal && <section className="mt-6"><Card title="Highest-priority unfinished goal"><div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="flex items-center gap-2"><Target className="text-cyan-300"/><p className="text-xl font-semibold">{topGoal.name}</p></div><p className="mt-2 text-sm text-slate-400">Priority {topGoal.priority} • {money.format(topGoal.currentAmount)} of {money.format(topGoal.targetAmount)}</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full bg-cyan-400" style={{ width: `${Math.min(100, topGoal.currentAmount / Math.max(1, topGoal.targetAmount) * 100)}%` }}/></div></div><a href="/goals" className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300">Manage goals</a></div></Card></section>}
