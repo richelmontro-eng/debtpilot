@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, Beaker, CalendarRange, Car, Gauge, Inbox, Menu, Settings, Target, X } from 'lucide-react';
+import { Activity, BarChart3, Beaker, CalendarRange, Car, Gauge, Inbox, Menu, Settings, Target, X } from 'lucide-react';
 import { useState } from 'react';
 
 const links = [
   { href: '/', label: 'Dashboard', icon: Gauge },
   { href: '/inbox', label: 'Financial inbox', icon: Inbox },
   { href: '/forecast', label: 'Cash flow', icon: CalendarRange },
+  { href: '/insights', label: 'Net worth & health', icon: Activity },
   { href: '/payoff', label: 'Payoff planner', icon: BarChart3 },
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/vehicles', label: 'Vehicle planner', icon: Car },
@@ -38,17 +39,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       <p className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-600">Financial operating system</p>
 
-      <nav className="mt-8 space-y-2">
+      <nav className="mt-8 space-y-1.5">
         {links.map(({ href, label, icon: Icon }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
-          return <Link key={href} href={href} onClick={() => setOpen(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition ${active ? 'bg-cyan-400/10 text-cyan-300' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-100'}`}><Icon size={18}/>{label}</Link>;
+          return <Link key={href} href={href} onClick={() => setOpen(false)} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${active ? 'bg-cyan-400/10 text-cyan-300' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-100'}`}><Icon size={18}/>{label}</Link>;
         })}
       </nav>
 
       <div className="absolute inset-x-5 bottom-5">
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-xs leading-5 text-slate-500">
-          <p className="font-medium text-slate-300">DebtPilot v0.9.0</p>
-          <p>Settings, saved vehicle comparisons, and live what-if scenarios.</p>
+          <p className="font-medium text-slate-300">DebtPilot v0.10.0</p>
+          <p>Net worth, health scoring, snapshots, trends, and weekly brief.</p>
         </div>
       </div>
     </aside>
