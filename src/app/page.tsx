@@ -7,8 +7,15 @@ import { createClient } from '@/lib/supabase';
 
 type Debt = { id: string; name: string; balance: number; apr: number; minimum: number };
 type Bill = { id: string; name: string; amount: number; dueDay: number; frequency: string };
+type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const paySchedule: Record<PayFrequency, { label: string; periods: number; cycleDays: number }> = {
+  weekly: { label: 'Weekly', periods: 52, cycleDays: 7 },
+  biweekly: { label: 'Every 2 weeks', periods: 26, cycleDays: 14 },
+  semimonthly: { label: 'Twice monthly', periods: 24, cycleDays: 15 },
+  monthly: { label: 'Monthly', periods: 12, cycleDays: 30 },
+};
 
 function daysUntilDue(dueDay: number) {
   const today = new Date();
@@ -27,10 +34,11 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
-  const [weeklyPay, setWeeklyPay] = useState(0);
+  const [payFrequency, setPayFrequency] = useState<PayFrequency>('weekly');
+  const [payPerCheck, setPayPerCheck] = useState(0);
   const [checking, setChecking] = useState(0);
   const [savings, setSavings] = useState(0);
-  const [weeklyLiving, setWeeklyLiving] = useState(0);
+  const [livingReserve, setLivingReserve] = useState(0);
   const [checkingCushion, setCheckingCushion] = useState(0);
   const [strategy, setStrategy] = useState<'avalanche' | 'snowball'>('avalanche');
   const [debts, setDebts] = useState<Debt[]>([]);
@@ -59,10 +67,12 @@ export default function Home() {
       const loadError = profileError || debtError || billError;
       if (loadError) setNotice(`Load failed: ${loadError.message}`);
       if (profile) {
-        setWeeklyPay(Number(profile.weekly_take_home));
+        const savedFrequency = profile.pay_frequency as PayFrequency;
+        setPayFrequency(paySchedule[savedFrequency] ? savedFrequency : 'weekly');
+        setPayPerCheck(Number(profile.weekly_take_home));
         setChecking(Number(profile.checking_balance));
         setSavings(Number(profile.savings_balance));
-        setWeeklyLiving(Number(profile.weekly_living_reserve));
+        setLivingReserve(Number(profile.weekly_living_reserve));
         setCheckingCushion(Number(profile.checking_cushion));
         setStrategy(profile.preferred_strategy === 'snowball' ? 'snowball' : 'avalanche');
       }
@@ -72,24 +82,26 @@ export default function Home() {
     })();
   }, [router]);
 
-  const billsDueSoon = useMemo(() => bills.filter(bill => bill.frequency === 'weekly' || daysUntilDue(bill.dueDay) <= 7), [bills]);
+  const schedule = paySchedule[payFrequency];
+  const billsDueSoon = useMemo(() => bills.filter(bill => bill.frequency === 'weekly' || daysUntilDue(bill.dueDay) <= schedule.cycleDays), [bills, schedule.cycleDays]);
   const billsReserve = billsDueSoon.reduce((sum, bill) => sum + bill.amount, 0);
   const monthlyMinimums = debts.reduce((sum, debt) => sum + debt.minimum, 0);
   const totalDebt = debts.reduce((sum, debt) => sum + debt.balance, 0);
-  const weeklyMinimums = monthlyMinimums / 4.33;
-  const availableFromPaycheck = Math.max(0, weeklyPay - weeklyLiving - billsReserve - weeklyMinimums);
+  const minimumReservePerCheck = monthlyMinimums * 12 / schedule.periods;
+  const availableFromPaycheck = Math.max(0, payPerCheck - livingReserve - billsReserve - minimumReservePerCheck);
   const cushionAdjustment = Math.max(0, checkingCushion - checking);
   const safeExtra = Math.max(0, availableFromPaycheck - cushionAdjustment);
   const ranked = [...debts].sort((a, b) => strategy === 'avalanche' ? b.apr - a.apr : a.balance - b.balance);
   const target = ranked[0];
   const confidence = target && safeExtra > 0 ? (billsDueSoon.length ? 94 : 88) : 65;
+  const annualIncome = payPerCheck * schedule.periods;
+  const monthlyIncome = annualIncome / 12;
   const health = useMemo(() => {
-    const monthlyIncome = weeklyPay * 52 / 12;
     const debtBurden = monthlyIncome ? monthlyMinimums / monthlyIncome : 1;
     const cushionScore = checkingCushion <= 0 ? 10 : Math.min(20, checking / checkingCushion * 20);
-    const cashFlowScore = weeklyPay <= 0 ? 0 : Math.min(35, safeExtra / weeklyPay * 100);
+    const cashFlowScore = payPerCheck <= 0 ? 0 : Math.min(35, safeExtra / payPerCheck * 100);
     return Math.max(0, Math.min(100, Math.round(35 + cushionScore + cashFlowScore - debtBurden * 35)));
-  }, [weeklyPay, monthlyMinimums, checking, checkingCushion, safeExtra]);
+  }, [payPerCheck, monthlyIncome, monthlyMinimums, checking, checkingCushion, safeExtra]);
 
   function updateDebt(id: string, field: keyof Debt, value: string) {
     setDebts(items => items.map(item => item.id === id ? { ...item, [field]: field === 'name' ? value : Number(value) } : item));
@@ -114,10 +126,11 @@ export default function Home() {
     setNotice('Saving…');
     const { error: profileError } = await supabase.from('profiles').upsert({
       user_id: userId,
-      weekly_take_home: weeklyPay,
+      pay_frequency: payFrequency,
+      weekly_take_home: payPerCheck,
       checking_balance: checking,
       savings_balance: savings,
-      weekly_living_reserve: weeklyLiving,
+      weekly_living_reserve: livingReserve,
       checking_cushion: checkingCushion,
       preferred_strategy: strategy,
       updated_at: new Date().toISOString(),
@@ -145,7 +158,7 @@ export default function Home() {
 
   return <main className="min-h-screen bg-slate-950 text-slate-100"><div className="mx-auto max-w-7xl px-5 py-8">
     <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div><div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300"><Gauge size={16}/> Weekly financial command center</div><h1 className="text-4xl font-semibold">DebtPilot</h1><p className="mt-2 text-slate-400">Cover the next seven days, protect your cushion, then attack debt.</p></div>
+      <div><div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300"><Gauge size={16}/> Paycheck financial command center</div><h1 className="text-4xl font-semibold">DebtPilot</h1><p className="mt-2 text-slate-400">Cover the period until your next paycheck, protect your cushion, then attack debt.</p></div>
       <div className="flex gap-3"><button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-60"><Save size={18}/>{saving ? 'Saving…' : 'Save plan'}</button><button onClick={signOut} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-slate-300"><LogOut size={18}/>Sign out</button></div>
     </header>
 
@@ -153,7 +166,7 @@ export default function Home() {
 
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <Metric icon={<WalletCards/>} label="Checking" value={money.format(checking)}/>
-      <Metric icon={<CalendarDays/>} label="Bills due in 7 days" value={money.format(billsReserve)}/>
+      <Metric icon={<CalendarDays/>} label={`Bills due in ${schedule.cycleDays} days`} value={money.format(billsReserve)}/>
       <Metric icon={<CreditCard/>} label="Total debt" value={money.format(totalDebt)}/>
       <Metric icon={<Gauge/>} label="Safe extra this paycheck" value={money.format(safeExtra)} accent/>
     </section>
@@ -161,22 +174,24 @@ export default function Home() {
     <section className="mt-6 grid gap-6 xl:grid-cols-3">
       <Card title="Paycheck planner" className="xl:col-span-2">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <NumberField label="Weekly take-home" value={weeklyPay} onChange={setWeeklyPay}/>
-          <NumberField label="Weekly living reserve" value={weeklyLiving} onChange={setWeeklyLiving}/>
+          <label className="block text-xs text-slate-400">Pay frequency<select className="field mt-1 w-full" value={payFrequency} onChange={e => setPayFrequency(e.target.value as PayFrequency)}><option value="weekly">Weekly — 52 checks/year</option><option value="biweekly">Every 2 weeks — 26/year</option><option value="semimonthly">Twice monthly — 24/year</option><option value="monthly">Monthly — 12/year</option></select></label>
+          <NumberField label="Net pay per check" value={payPerCheck} onChange={setPayPerCheck}/>
+          <NumberField label="Living reserve per check" value={livingReserve} onChange={setLivingReserve}/>
           <NumberField label="Checking balance" value={checking} onChange={setChecking}/>
           <NumberField label="Protected checking cushion" value={checkingCushion} onChange={setCheckingCushion}/>
           <NumberField label="Savings balance" value={savings} onChange={setSavings}/>
           <label className="block text-xs text-slate-400">Debt strategy<select className="field mt-1 w-full" value={strategy} onChange={e => setStrategy(e.target.value as 'avalanche' | 'snowball')}><option value="avalanche">Avalanche — highest APR</option><option value="snowball">Snowball — smallest balance</option></select></label>
         </div>
         <div className="mt-6 grid gap-3 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 sm:grid-cols-4">
-          <Stat label="Paycheck" value={money.format(weeklyPay)}/><Stat label="Bills reserved" value={money.format(billsReserve)}/><Stat label="Living + minimums" value={money.format(weeklyLiving + weeklyMinimums)}/><Stat label="Available for debt" value={money.format(safeExtra)}/>
+          <Stat label={`${schedule.label} paycheck`} value={money.format(payPerCheck)}/><Stat label="Bills reserved" value={money.format(billsReserve)}/><Stat label="Living + minimums" value={money.format(livingReserve + minimumReservePerCheck)}/><Stat label="Available for debt" value={money.format(safeExtra)}/>
         </div>
+        <p className="mt-3 text-xs text-slate-500">Annualized take-home: {money.format(annualIncome)} • Monthly equivalent: {money.format(monthlyIncome)}</p>
       </Card>
 
       <Card title="Pilot recommendation">
         {target && safeExtra > 0 ? <>
           <p className="text-2xl font-semibold">Pay <span className="text-cyan-300">{money.format(safeExtra)}</span> toward {target.name}.</p>
-          <p className="mt-4 text-sm leading-6 text-slate-400">Why: {strategy === 'avalanche' ? `${target.name} has the highest APR at ${target.apr.toFixed(2)}%.` : `${target.name} has the smallest remaining balance.`} Bills due within seven days, weekly spending, minimum payments, and your checking cushion are reserved first.</p>
+          <p className="mt-4 text-sm leading-6 text-slate-400">Why: {strategy === 'avalanche' ? `${target.name} has the highest APR at ${target.apr.toFixed(2)}%.` : `${target.name} has the smallest remaining balance.`} Bills due before the next {schedule.label.toLowerCase()} paycheck, living money, minimum payments, and your checking cushion are reserved first.</p>
           <div className="mt-5 rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-4"><p className="text-xs uppercase tracking-widest text-cyan-300">Confidence</p><p className="mt-1 text-3xl font-semibold">{confidence}%</p></div>
         </> : <p className="text-slate-400">Add your income, bills, cushion, and debts. DebtPilot will recommend the safest extra payment after required cash is protected.</p>}
       </Card>
@@ -207,10 +222,10 @@ export default function Home() {
     </section>
 
     <section className="mt-6 grid gap-4 md:grid-cols-2">
-      <Card title="Due before the next weekly cycle">
-        {billsDueSoon.length ? <div className="space-y-3">{billsDueSoon.map(bill => <div key={bill.id} className="flex items-center justify-between rounded-xl border border-slate-800 p-3"><div><p className="font-medium">{bill.name}</p><p className="text-xs text-slate-500">{bill.frequency === 'weekly' ? 'Weekly' : `Due in ${daysUntilDue(bill.dueDay)} day(s)`}</p></div><p className="font-semibold">{money.format(bill.amount)}</p></div>)}</div> : <Empty text="No saved bills fall within the next seven days."/>}
+      <Card title="Due before the next paycheck">
+        {billsDueSoon.length ? <div className="space-y-3">{billsDueSoon.map(bill => <div key={bill.id} className="flex items-center justify-between rounded-xl border border-slate-800 p-3"><div><p className="font-medium">{bill.name}</p><p className="text-xs text-slate-500">{bill.frequency === 'weekly' ? 'Weekly' : `Due in ${daysUntilDue(bill.dueDay)} day(s)`}</p></div><p className="font-semibold">{money.format(bill.amount)}</p></div>)}</div> : <Empty text={`No saved bills fall within the next ${schedule.cycleDays} days.`}/>} 
       </Card>
-      <Card title="Financial health"><p className="text-5xl font-semibold">{health}<span className="text-lg text-slate-500">/100</span></p><p className="mt-4 text-sm leading-6 text-slate-400">This early score considers minimum-payment burden, available weekly cash flow, and whether your checking cushion is funded. It will become more accurate as goals and payment history are added.</p></Card>
+      <Card title="Financial health"><p className="text-5xl font-semibold">{health}<span className="text-lg text-slate-500">/100</span></p><p className="mt-4 text-sm leading-6 text-slate-400">This early score considers minimum-payment burden, available cash flow per paycheck, and whether your checking cushion is funded.</p></Card>
     </section>
 
     <p className="mt-6 text-xs leading-5 text-slate-500">Planning estimates only. Confirm lender minimums, statement timing, and bill due dates before making payments.</p>
