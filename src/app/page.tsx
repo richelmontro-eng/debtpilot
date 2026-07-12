@@ -19,6 +19,7 @@ export default function Home() {
   const [userId, setUserId] = useState('');
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState('');
+  const [saving, setSaving] = useState(false);
   const [weeklyPay, setWeeklyPay] = useState(0);
   const [checking, setChecking] = useState(0);
   const [savings, setSavings] = useState(0);
@@ -37,12 +38,13 @@ export default function Home() {
     if (!supabase) { setNotice('Add Supabase environment variables in Vercel to enable accounts and saving.'); setLoading(false); return; }
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return router.replace('/login');
+      if (!user) { router.replace('/login'); return; }
       setUserId(user.id);
-      const [{ data: profile }, { data: debtRows }] = await Promise.all([
+      const [{ data: profile, error: profileLoadError }, { data: debtRows, error: debtLoadError }] = await Promise.all([
         supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle(),
         supabase.from('debts').select('*').eq('user_id', user.id).order('created_at'),
       ]);
+      if (profileLoadError || debtLoadError) setNotice(`Load failed: ${(profileLoadError || debtLoadError)?.message}`);
       if (profile) {
         setWeeklyPay(Number(profile.weekly_take_home));
         setChecking(Number(profile.checking_balance));
@@ -80,8 +82,12 @@ export default function Home() {
 
   async function save() {
     const supabase = createClient();
-    if (!supabase || !userId) return;
+    if (!supabase) { setNotice('Save failed: Supabase is not configured.'); return; }
+    if (!userId) { setNotice('Save failed: your login session is not ready. Refresh and sign in again.'); return; }
+
+    setSaving(true);
     setNotice('Saving…');
+
     const { error: profileError } = await supabase.from('profiles').upsert({
       user_id: userId,
       weekly_take_home: weeklyPay,
@@ -91,21 +97,39 @@ export default function Home() {
       preferred_strategy: strategy,
       updated_at: new Date().toISOString(),
     });
+
+    let debtError = null;
     const { error: deleteError } = await supabase.from('debts').delete().eq('user_id', userId);
-    const { error: debtError } = debts.length ? await supabase.from('debts').insert(debts.map(debt => ({ user_id: userId, name: debt.name, balance: debt.balance, apr: debt.apr, minimum_payment: debt.minimum }))) : { error: null };
-    setNotice(profileError || deleteError || debtError ? `Save failed: ${(profileError || deleteError || debtError)?.message}` : 'Saved successfully.');
+    if (!deleteError && debts.length) {
+      const result = await supabase.from('debts').insert(debts.map(debt => ({
+        user_id: userId,
+        name: debt.name,
+        balance: debt.balance,
+        apr: debt.apr,
+        minimum_payment: debt.minimum,
+      })));
+      debtError = result.error;
+    }
+
+    const error = profileError || deleteError || debtError;
+    setNotice(error ? `Save failed: ${error.message}` : `Saved successfully at ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`);
+    setSaving(false);
   }
 
   async function signOut() {
-    await createClient()?.auth.signOut();
-    router.replace('/login');
+    const supabase = createClient();
+    if (!supabase) { window.location.replace('/login'); return; }
+    setNotice('Signing out…');
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) { setNotice(`Sign out failed: ${error.message}`); return; }
+    window.location.replace('/login');
   }
 
   if (loading) return <main className="min-h-screen bg-slate-950 text-slate-100 grid place-items-center">Loading DebtPilot…</main>;
 
   return <main className="min-h-screen bg-slate-950 text-slate-100"><div className="mx-auto max-w-7xl px-5 py-8">
-    <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300"><Gauge size={16}/> Financial command center</div><h1 className="text-4xl font-semibold">DebtPilot</h1><p className="mt-2 text-slate-400">Plan each weekly paycheck and test a vehicle before committing.</p></div><div className="flex gap-3"><button onClick={save} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950"><Save size={18}/>Save</button><button onClick={signOut} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-slate-300"><LogOut size={18}/>Sign out</button></div></header>
-    {notice && <p className="mb-5 rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm text-slate-300">{notice}</p>}
+    <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300"><Gauge size={16}/> Financial command center</div><h1 className="text-4xl font-semibold">DebtPilot</h1><p className="mt-2 text-slate-400">Plan each weekly paycheck and test a vehicle before committing.</p></div><div className="flex gap-3"><button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-60"><Save size={18}/>{saving ? 'Saving…' : 'Save'}</button><button onClick={signOut} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-slate-300"><LogOut size={18}/>Sign out</button></div></header>
+    {notice && <p role="status" aria-live="polite" className="mb-5 rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm text-slate-300">{notice}</p>}
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Metric icon={<WalletCards/>} label="Checking" value={money.format(checking)}/><Metric icon={<PiggyBank/>} label="Savings" value={money.format(savings)}/><Metric icon={<CreditCard/>} label="Total debt" value={money.format(totalDebt)}/><Metric icon={<Gauge/>} label="Safe extra this week" value={money.format(safeExtra)} accent/></section>
     <section className="mt-6 grid gap-6 xl:grid-cols-2"><Card title="This week's recommendation"><p className="text-2xl font-semibold">{target ? <>Pay {money.format(safeExtra)} toward <span className="text-cyan-300">{target.name}</span></> : 'Add your first debt to get a recommendation.'}</p><div className="mt-5 grid gap-4 sm:grid-cols-3"><NumberField label="Weekly take-home" value={weeklyPay} onChange={setWeeklyPay}/><NumberField label="Weekly living reserve" value={weeklyLiving} onChange={setWeeklyLiving}/><NumberField label="Checking balance" value={checking} onChange={setChecking}/><NumberField label="Savings balance" value={savings} onChange={setSavings}/><label className="block text-xs text-slate-400">Strategy<select className="field mt-1 w-full" value={strategy} onChange={e => setStrategy(e.target.value as 'avalanche' | 'snowball')}><option value="avalanche">Avalanche</option><option value="snowball">Snowball</option></select></label></div></Card>
     <Card title="Can I afford this car?" icon={<Car className="text-cyan-300"/>}><div className="grid grid-cols-2 gap-3"><NumberField label="Vehicle price" value={carPrice} onChange={setCarPrice}/><NumberField label="Down payment" value={downPayment} onChange={setDownPayment}/><NumberField label="APR %" value={carApr} onChange={setCarApr} step="0.1"/><NumberField label="Term (months)" value={term} onChange={setTerm}/><NumberField label="Insurance / month" value={insurance} onChange={setInsurance}/><NumberField label="Fuel + maintenance" value={operating} onChange={setOperating}/></div><div className="mt-5 grid gap-3 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 sm:grid-cols-4"><Stat label="Payment" value={`${money.format(carPayment)}/mo`}/><Stat label="Ownership" value={`${money.format(ownershipMonthly)}/mo`}/><Stat label="Debt extra after car" value={`${money.format(extraAfterCar)}/wk`}/><Stat label="Affordability score" value={`${carScore}/100`}/></div></Card></section>
