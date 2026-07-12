@@ -229,7 +229,7 @@ export default function PilotPage() {
       <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
         <h2 className="text-2xl font-semibold">Upcoming obligations</h2>
         <div className="mt-5 space-y-3">
-          {review.dueSoon.length ? review.dueSoon.slice(0, 6).map(bill => <div key={bill.id} className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/60 p-4"><div><p className="font-medium">{bill.name}</p><p className="mt-1 text-xs text-slate-500">{bill.frequency === 'weekly' ? 'Recurring this week' : `Due in ${daysUntilDue(bill.dueDay)} day(s)`}</p></div><p className="font-semibold">{money.format(bill.amount)}</p></div>) : <p className="rounded-xl border border-dashed border-slate-700 p-4 text-sm text-slate-500">No saved bills fall before the next paycheck.</p>}
+          {review.dueSoon.length ? review.dueSoon.slice(0, 6).map(bill => <div key={bill.id} className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/60 p-4"><div><p className="font-medium">{bill.name}</p><p className="mt-1 text-xs text-slate-500">{bill.frequency === 'weekly' ? 'Recurring this week' : `Due in ${daysUntilDue(bill.dueDay)} day(s)`}</p></div><p className="font-semibold">{money.format(bill.amount)}</p></div>) : <p className="rounded-xl border border-dashed border-slate-700 p-4 text-sm text-slate-500">No saved bills fall before the next paycheck. Add recurring bills on the dashboard if any obligations are missing.</p>}
         </div>
       </div>
 
