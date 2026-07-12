@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, CalendarRange, Car, Gauge, Inbox, Menu, Settings, Target, X } from 'lucide-react';
+import { BarChart3, Beaker, CalendarRange, Car, Gauge, Inbox, Menu, Settings, Target, X } from 'lucide-react';
 import { useState } from 'react';
 
 const links = [
@@ -12,6 +12,7 @@ const links = [
   { href: '/payoff', label: 'Payoff planner', icon: BarChart3 },
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/vehicles', label: 'Vehicle planner', icon: Car },
+  { href: '/what-if', label: 'What-If Lab', icon: Beaker },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -45,8 +46,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="absolute inset-x-5 bottom-5 space-y-3">
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-xs leading-5 text-slate-500">
-          <p className="font-medium text-slate-300">DebtPilot v0.8.0</p>
-          <p>Vehicle decision engine and financial readiness scoring.</p>
+          <p className="font-medium text-slate-300">DebtPilot v0.8.1</p>
+          <p>Saved vehicle comparisons and live what-if scenarios.</p>
         </div>
         <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600"><Settings size={16}/>Settings coming next</div>
       </div>
