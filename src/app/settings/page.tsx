@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, LogOut, Save, Settings, Trash2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
+import InfoTooltip from '@/components/info-tooltip';
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 type Strategy = 'avalanche' | 'snowball';
@@ -23,7 +24,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    if (!supabase) { setMessage('Supabase is not configured.'); setLoading(false); return; }
+    if (!supabase) { setMessage('DebtPilot is temporarily unavailable. Please try again later.'); setLoading(false); return; }
     (async () => {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) { window.location.assign('/login'); return; }
@@ -108,8 +109,8 @@ export default function SettingsPage() {
     {message && <p role="status" className="mb-6 rounded-xl border border-slate-700 bg-slate-900 p-4 text-sm text-slate-300">{message}</p>}
     <section className="grid gap-6 lg:grid-cols-2">
       <Card title="Profile"><Field label="Display name"><input className="field mt-1 w-full" value={displayName} onChange={e => setDisplayName(e.target.value)}/></Field><Field label="Email"><input className="field mt-1 w-full opacity-70" value={email} disabled/></Field></Card>
-      <Card title="Paycheck preferences"><Field label="Pay frequency"><select className="field mt-1 w-full" value={payFrequency} onChange={e => setPayFrequency(e.target.value as PayFrequency)}><option value="weekly">Weekly — 52 checks/year</option><option value="biweekly">Every 2 weeks — 26/year</option><option value="semimonthly">Twice monthly — 24/year</option><option value="monthly">Monthly — 12/year</option></select></Field><NumberField label="Living reserve per check" value={livingReserve} onChange={setLivingReserve}/></Card>
-      <Card title="Financial guardrails"><NumberField label="Protected checking cushion" value={cushion} onChange={setCushion}/><Field label="Debt payoff strategy"><select className="field mt-1 w-full" value={strategy} onChange={e => setStrategy(e.target.value as Strategy)}><option value="avalanche">Avalanche — highest APR first</option><option value="snowball">Snowball — smallest balance first</option></select></Field></Card>
+      <Card title="Paycheck preferences"><Field label={<InfoTooltip label="Pay frequency">How often you receive regular pay. DebtPilot uses it to convert monthly bills and debt minimums into a per-paycheck reserve.</InfoTooltip>}><select className="field mt-1 w-full" value={payFrequency} onChange={e => setPayFrequency(e.target.value as PayFrequency)}><option value="weekly">Weekly — 52 checks/year</option><option value="biweekly">Every 2 weeks — 26/year</option><option value="semimonthly">Twice monthly — 24/year</option><option value="monthly">Monthly — 12/year</option></select></Field><NumberField label={<InfoTooltip label="Living reserve per check">Money protected for groceries, fuel, and everyday spending until your next paycheck. DebtPilot subtracts it before suggesting extra payments.</InfoTooltip>} value={livingReserve} onChange={setLivingReserve}/></Card>
+      <Card title="Financial guardrails"><NumberField label={<InfoTooltip label="Protected checking cushion">The minimum balance you want left in checking after planned expenses. DebtPilot protects this amount before recommending optional debt or goal payments.</InfoTooltip>} value={cushion} onChange={setCushion}/><Field label="Debt payoff strategy"><select className="field mt-1 w-full" value={strategy} onChange={e => setStrategy(e.target.value as Strategy)}><option value="avalanche">Avalanche — highest APR first</option><option value="snowball">Snowball — smallest balance first</option></select></Field></Card>
       <Card title="About DebtPilot"><p className="text-2xl font-semibold">Version 0.15.0</p><p className="mt-3 text-sm leading-6 text-slate-400">Includes the Financial Command Center, reviewed transaction posting, forecasting, goals, payoff planning, vehicle comparisons, What-If scenarios, and Pilot recommendations.</p><button onClick={signOut} className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm text-slate-300"><LogOut size={17}/>Sign out</button></Card>
     </section>
 
@@ -123,5 +124,5 @@ export default function SettingsPage() {
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) { return <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6"><h2 className="mb-5 text-2xl font-semibold">{title}</h2><div className="space-y-4">{children}</div></section>; }
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block text-xs text-slate-400">{label}{children}</label>; }
-function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) { return <Field label={label}><input className="field mt-1 w-full" type="number" min="0" value={value} onChange={e => onChange(Number(e.target.value))}/></Field>; }
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) { return <label className="block text-xs text-slate-400">{label}{children}</label>; }
+function NumberField({ label, value, onChange }: { label: React.ReactNode; value: number; onChange: (value: number) => void }) { return <Field label={label}><input className="field mt-1 w-full" type="number" min="0" value={value} onChange={e => onChange(Number(e.target.value))}/></Field>; }
