@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 
@@ -12,19 +12,45 @@ export default function LoginPage() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    const supabase = createClient();
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) router.replace('/');
+    });
+  }, [router]);
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     const supabase = createClient();
     if (!supabase) return setMessage('Add the Supabase environment variables in Vercel first.');
+
     setBusy(true);
     setMessage('');
+
     const result = mode === 'login'
       ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password });
+      : await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+          },
+        });
+
     setBusy(false);
-    if (result.error) return setMessage(result.error.message);
-    if (mode === 'signup' && !result.data.session) return setMessage('Check your email to confirm your account, then sign in.');
-    router.replace('/');
+
+    if (result.error) {
+      setMessage(result.error.message);
+      return;
+    }
+
+    if (mode === 'signup' && !result.data.session) {
+      setMessage('Check your email to confirm your account. The confirmation link will return you to DebtPilot.');
+      return;
+    }
+
+    window.location.replace('/');
   }
 
   return <main className="min-h-screen bg-slate-950 text-slate-100 grid place-items-center p-6">
