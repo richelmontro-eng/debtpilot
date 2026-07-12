@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { ArrowRight, CalendarDays, CheckCircle2, Clock3, CreditCard, Gauge, Info, ListChecks, LogOut, Plus, Save, Target, Trash2, Trophy, WalletCards } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { getPilotBriefing, getRecommendationId, type CompletedRecommendation, type PilotCategory } from '@/lib/pilot';
+import { getBriefingSummary, getDeterministicInsights, getGroupedTimeline, getMissingInformation, getSafeDashboardError } from '@/lib/dashboard-intelligence';
+import PilotReasoning from '@/components/pilot-reasoning';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 
 type Debt = { id: string; name: string; balance: number; apr: number; minimum: number };
@@ -103,6 +105,7 @@ export default function Home() {
   const [userId, setUserId] = useState('');
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState('');
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [completingRecommendation, setCompletingRecommendation] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
@@ -123,13 +126,17 @@ export default function Home() {
   useEffect(() => {
     const supabase = createClient();
     if (!supabase) {
-      setNotice('Supabase environment variables are missing.');
+      setNotice(getSafeDashboardError());
+      setLoadFailed(true);
       setLoading(false);
       return;
     }
     (async () => {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError) setNotice(`Load failed: ${userError.message}`);
+      if (userError) {
+        setNotice(getSafeDashboardError());
+        setLoadFailed(true);
+      }
       if (!user) {
         router.replace('/login');
         return;
@@ -144,7 +151,10 @@ export default function Home() {
       ]);
       const historyTableMissing = isMissingRecommendationHistory(historyResult.error);
       const loadError = profileResult.error || debtResult.error || billResult.error || goalResult.error || (historyTableMissing ? null : historyResult.error);
-      if (loadError) setNotice(`Load failed: ${loadError.message}`);
+      if (loadError) {
+        setNotice(getSafeDashboardError());
+        setLoadFailed(true);
+      }
       if (historyTableMissing) {
         setRecommendationHistoryUnavailable(true);
         if (!loadError) setNotice('Recommendation history is not available yet.');
@@ -186,7 +196,6 @@ export default function Home() {
   const billsDueSoon = useMemo(() => bills.filter(bill => bill.frequency === 'weekly' || daysUntilDue(bill.dueDay) <= schedule.cycleDays), [bills, schedule.cycleDays]);
   const billsReserve = billsDueSoon.reduce((sum, bill) => sum + bill.amount, 0);
   const monthlyMinimums = debts.reduce((sum, debt) => sum + debt.minimum, 0);
-  const totalDebt = debts.reduce((sum, debt) => sum + debt.balance, 0);
   const minimumReservePerCheck = monthlyMinimums * 12 / schedule.periods;
   const availableBeforeCushion = Math.max(0, payPerCheck - livingReserve - billsReserve - minimumReservePerCheck);
   const cushionGap = Math.max(0, checkingCushion - checking);
@@ -214,22 +223,12 @@ export default function Home() {
     })),
   });
   const pilot = briefing.recommendation;
-  const emergencyGoal = goals.find(goal => goal.goalType === 'emergency_fund');
-  const emergencyProgress = emergencyGoal?.targetAmount
-    ? Math.min(100, Math.round(emergencyGoal.currentAmount / emergencyGoal.targetAmount * 100))
-    : null;
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening';
-  const financialSummary = pilot.category === 'none'
-    ? pilot.description
-    : `${briefing.pulse.label} overall: ${pilot.description}`;
+  const briefingSummary = getBriefingSummary({ pulse: briefing.pulse, safeExtra, availableBeforeCushion, cushionGap, recommendation: pilot });
   const timeHorizon = pilot.category === 'cushion' ? 'Before optional spending' : pilot.category === 'none' ? 'Through next payday' : 'This pay cycle';
-  const missingInformation = [
-    ...(payPerCheck <= 0 ? [{ label: 'Net pay per check', detail: 'Add income so Pilot can calculate a safe spending and payment plan.', href: '/settings' }] : []),
-    ...(checkingCushion <= 0 ? [{ label: 'Protected checking cushion', detail: 'Set a floor so recommendations never use cash you want kept available.', href: '/settings' }] : []),
-    ...(bills.length === 0 ? [{ label: 'Recurring bills', detail: 'Add bills so each pay-cycle briefing reserves upcoming obligations.', href: '#bills' }] : []),
-    ...(debts.length === 0 ? [{ label: 'Debt accounts', detail: 'Add balances, APRs, and minimums to unlock payoff guidance.', href: '#debts' }] : []),
-    ...(goals.length === 0 ? [{ label: 'Financial goals', detail: 'Add a goal so Pilot can direct safe extra cash toward what matters.', href: '/goals' }] : []),
-  ];
+  const missingInformation = getMissingInformation({ payPerCheck, checkingCushion, debts, bills, goals });
+  const pilotInsights = getDeterministicInsights({ checking, checkingCushion, safeExtra, billsReserve, payPerCheck, debts, goals });
+  const timeline = getGroupedTimeline({ now: new Date(), cycleDays: schedule.cycleDays, payPerCheck, bills, goals, recommendation: pilot });
   const recommendationId = getRecommendationId(pilot);
   const isRecommendationComplete = recommendationHistory.some(item => item.recommendationId === recommendationId);
 
@@ -253,7 +252,7 @@ export default function Home() {
         setCompletingRecommendation(false);
         return;
       }
-      setNotice(`Could not complete recommendation: ${error.message}`);
+      setNotice('We could not mark this recommendation complete. Please try again.');
       setCompletingRecommendation(false);
       return;
     }
@@ -297,7 +296,7 @@ export default function Home() {
     setDebts(debtResult.items);
     setBills(billResult.items);
     const error = profileError || debtResult.error || billResult.error;
-    setNotice(error ? `Save failed: ${error.message}` : 'Saved successfully. Your paycheck plan is up to date.');
+    setNotice(error ? 'We could not save every change. Review your connection and try again.' : 'Saved successfully. Your paycheck plan is up to date.');
     setSaving(false);
   }
 
@@ -315,21 +314,16 @@ export default function Home() {
       <div className="flex gap-3"><button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-60"><Save size={18}/>{saving ? 'Saving…' : 'Save plan'}</button><button onClick={signOut} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-slate-300"><LogOut size={18}/>Sign out</button></div>
     </header>
 
-    {notice && <p role="status" aria-live="polite" className="mb-5 rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm text-slate-300">{notice}</p>}
+    {notice && <div role="status" aria-live="polite" className="mb-5 flex flex-col gap-3 rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm text-slate-300 sm:flex-row sm:items-center sm:justify-between"><p>{notice}</p>{loadFailed && <button type="button" onClick={() => window.location.reload()} className="rounded-lg border border-cyan-400/30 px-3 py-2 font-medium text-cyan-300 outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Retry briefing</button>}</div>}
 
     <section className="overflow-hidden rounded-3xl border border-cyan-400/25 bg-gradient-to-br from-cyan-400/15 via-slate-900 to-slate-900 p-7 sm:p-9">
       <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
-        <div><p className="text-sm font-medium text-cyan-300">{greeting}{displayName ? `, ${displayName}` : ''}</p><h2 className="mt-3 text-3xl font-semibold sm:text-4xl">Your financial briefing</h2><p className="mt-4 max-w-3xl text-lg leading-8 text-slate-300">{financialSummary}</p></div>
+        <div><p className="text-sm font-medium text-cyan-300">{greeting}{displayName ? `, ${displayName}` : ''}</p><h2 className="mt-3 text-3xl font-semibold sm:text-4xl">Your financial briefing</h2><p className="mt-4 max-w-3xl text-lg leading-8 text-slate-300">{briefingSummary.summary}</p><p className={`mt-4 inline-flex rounded-full border px-3 py-1.5 text-sm ${briefingSummary.cashRisk ? 'border-amber-400/30 bg-amber-400/10 text-amber-200' : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'}`}>{briefingSummary.cashMessage}</p></div>
         <div className="flex items-center gap-4 rounded-2xl border border-slate-700/80 bg-slate-950/60 p-5"><div role="img" aria-label={`Financial health ${briefing.pulse.score} out of 100`} className="grid h-20 w-20 place-items-center rounded-full border-4 border-cyan-400/70 bg-slate-900"><span className="text-2xl font-semibold">{briefing.pulse.score}</span></div><div><p className="text-xs uppercase tracking-widest text-slate-500">Financial health</p><p className="mt-1 text-xl font-semibold text-cyan-300">{briefing.pulse.label}</p></div></div>
       </div>
     </section>
 
-    <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <Insight icon={<CalendarDays/>} title={billsReserve <= Math.max(0, payPerCheck - livingReserve - minimumReservePerCheck) ? 'Upcoming bills are covered.' : 'Upcoming bills need attention.'} detail={`${money.format(billsReserve)} is reserved for bills due before your next ${schedule.label.toLowerCase()} paycheck.`}/>
-      <Insight icon={<Target/>} title={emergencyProgress === null ? 'Emergency fund is not defined.' : `Emergency fund is ${emergencyProgress}% funded.`} detail={emergencyGoal ? `${money.format(emergencyGoal.currentAmount)} saved toward a ${money.format(emergencyGoal.targetAmount)} target.` : 'Create an emergency-fund goal to track your first line of financial defense.'}/>
-      <Insight icon={<WalletCards/>} title={`${money.format(safeExtra)} is safe to direct.`} detail={`${money.format(Math.max(0, availableBeforeCushion))} remains after essentials; Pilot protects a ${money.format(checkingCushion)} checking cushion first.`}/>
-      <Insight icon={<CreditCard/>} title={totalDebt > 0 ? `${money.format(totalDebt)} remains across ${debts.length} debt${debts.length === 1 ? '' : 's'}.` : 'No active debt is recorded.'} detail={totalDebt > 0 ? `${money.format(monthlyMinimums)} in monthly minimums is included before extra payments.` : 'Add any credit cards or loans to receive a payoff priority.'}/>
-    </section>
+    <section className="mt-6"><Card title="Pilot insights"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{pilotInsights.map(insight => <Insight key={insight.id} icon={insight.id === 'debt' ? <CreditCard/> : insight.id === 'goal' || insight.id === 'emergency' ? <Target/> : insight.id === 'bills' ? <CalendarDays/> : <WalletCards/>} title={insight.title} detail={insight.detail} tone={insight.tone}/>)}</div></Card></section>
 
     {missingInformation.length > 0 && <section className="mt-6"><Card title="Missing information"><p className="-mt-2 mb-5 text-sm leading-6 text-slate-400">Complete these details to make your briefing and Pilot recommendation more precise.</p><div className="grid gap-3 md:grid-cols-2">{missingInformation.map(item => <Link key={item.label} href={item.href} className="group flex items-start gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 transition hover:border-amber-400/40"><ListChecks className="mt-0.5 shrink-0 text-amber-300" size={19}/><span className="min-w-0 flex-1"><span className="block font-medium text-slate-200">{item.label}</span><span className="mt-1 block text-sm leading-5 text-slate-500">{item.detail}</span></span><ArrowRight className="mt-1 shrink-0 text-slate-600 transition group-hover:translate-x-1 group-hover:text-amber-300" size={17}/></Link>)}</div></Card></section>}
 
@@ -355,17 +349,7 @@ export default function Home() {
         <p className="text-2xl font-semibold">{pilot.title}</p>
         <p className="mt-4 text-sm leading-6 text-slate-400">{pilot.description}</p>
         <div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-4"><p className="text-xs uppercase tracking-widest text-cyan-300">Expected impact</p><p className="mt-1 text-xl font-semibold">{pilot.estimatedBenefit > 0 ? money.format(pilot.estimatedBenefit) : 'Cash protected'}</p></div><div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4"><p className="text-xs uppercase tracking-widest text-slate-500">Confidence</p><p className="mt-1 text-xl font-semibold">{pilot.confidence}%</p></div><div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4"><p className="text-xs uppercase tracking-widest text-slate-500">Time horizon</p><p className="mt-1 text-base font-semibold">{timeHorizon}</p></div></div>
-        <div className="mt-5 flex flex-wrap gap-3"><button type="button" aria-expanded={whyOpen} aria-controls="pilot-reasoning" onClick={() => setWhyOpen(open => !open)} className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm font-medium text-cyan-300">{whyOpen ? 'Hide details' : 'Why?'}</button><button type="button" disabled={recommendationHistoryUnavailable || isRecommendationComplete || completingRecommendation} onClick={markRecommendationComplete} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-default disabled:bg-emerald-400"><CheckCircle2 size={16}/>{isRecommendationComplete ? 'Completed' : 'Mark Complete'}</button></div>
-        {whyOpen && <div id="pilot-reasoning" className="mt-4 rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Stat label="Confidence" value={`${pilot.confidence}%`}/>
-            <Stat label="Estimated benefit" value={money.format(pilot.estimatedBenefit)}/>
-            <Stat label="Recommendation category" value={pilot.category === 'none' ? 'No extra action' : pilot.category}/>
-            <Stat label="Priority" value={pilot.priority}/>
-          </div>
-          <p className="mt-4 text-xs font-semibold uppercase tracking-widest text-cyan-300">Reasoning</p>
-          <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-300">{pilot.reasoning.map(reason => <li key={reason}>{reason}</li>)}</ul>
-        </div>}
+        <div className="mt-5 flex flex-col items-start gap-3 sm:flex-row"><div><PilotReasoning open={whyOpen} onToggle={() => setWhyOpen(open => !open)} reasoning={pilot.reasoning}/></div><button type="button" disabled={recommendationHistoryUnavailable || isRecommendationComplete || completingRecommendation} onClick={markRecommendationComplete} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-default disabled:bg-emerald-400"><CheckCircle2 size={16}/>{isRecommendationComplete ? 'Completed' : 'Mark Complete'}</button></div>
       </Card>
     </section>
 
@@ -376,14 +360,14 @@ export default function Home() {
           <div><p className="text-sm font-medium text-slate-200">Why this pulse was assigned</p><ul className="mt-3 list-disc space-y-3 pl-5 text-sm leading-6 text-slate-400">{briefing.pulse.explanation.map(item => <li key={item}>{item}</li>)}</ul></div>
         </div>
       </Card>
-      <Card title="Financial Inbox">
-        <div className="space-y-0">{briefing.inbox.map((item, index) => <div key={item.id} className="relative flex gap-4 pb-5 last:pb-0">{index < briefing.inbox.length - 1 && <span className="absolute left-[15px] top-8 h-[calc(100%-1rem)] w-px bg-slate-700"/>}<div className={`z-10 mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full border ${item.urgency === 'now' ? 'border-amber-400/40 bg-amber-400/10 text-amber-300' : 'border-cyan-400/30 bg-slate-950 text-cyan-300'}`}><Clock3 size={14}/></div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><p className="font-medium">{item.title}</p>{item.amount !== undefined && <p className="shrink-0 font-semibold text-cyan-300">{money.format(item.amount)}</p>}</div><p className="mt-1 text-sm leading-5 text-slate-500">{item.description}</p></div></div>)}</div>
+      <Card title="Financial Timeline">
+        {timeline.length ? <div className="space-y-6">{timeline.map(group => <section key={group.label}><h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-300">{group.label}</h3><div className="space-y-3">{group.items.map(item => <article key={item.id} className="flex min-w-0 items-start gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4"><div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-cyan-400/25 text-cyan-300"><Clock3 size={14}/></div><div className="min-w-0 flex-1"><div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between"><p className="font-medium">{item.label}</p>{item.amount !== undefined && <p className={`font-semibold ${item.amount >= 0 ? 'text-emerald-300' : 'text-slate-200'}`}>{item.amount >= 0 ? '+' : '−'}{money.format(Math.abs(item.amount))}</p>}</div><p className="mt-1 text-sm text-slate-500">{item.detail} · {new Date(item.date).toLocaleDateString()}</p></div></article>)}</div></section>)}</div> : <Empty text="Your timeline is ready for details. Add a paycheck, recurring bills, or a goal to see what is expected next."/>}
       </Card>
     </section>
 
     <section className="mt-6 grid gap-6 xl:grid-cols-2">
       <Card title="Recent Wins"><div className="space-y-3">{briefing.recentWins.map(win => <div key={win} className="flex gap-3 rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4"><Trophy className="mt-0.5 shrink-0 text-emerald-300" size={18}/><p className="text-sm leading-6 text-slate-300">{win}</p></div>)}</div></Card>
-      <Card title="Recommendation History">{recommendationHistory.length ? <div className="space-y-3">{recommendationHistory.slice(0, 5).map(item => <div key={item.id} className="rounded-2xl border border-slate-800 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{item.title}</p><p className="mt-1 text-xs capitalize text-slate-500">{item.category} • {new Date(item.completedAt).toLocaleDateString()}</p></div><CheckCircle2 className="shrink-0 text-emerald-300" size={19}/></div>{item.estimatedBenefit > 0 && <p className="mt-3 text-sm font-semibold text-cyan-300">{money.format(item.estimatedBenefit)} estimated benefit</p>}</div>)}</div> : <Empty text={recommendationHistoryUnavailable ? 'Recommendation history is not available yet. Apply the history migration to start recording completed actions.' : 'No completed recommendations yet. Mark the current Pilot recommendation complete to record your first win.'}/>}</Card>
+      <Card title="Recommendation History">{recommendationHistory.length ? <div className="space-y-3">{recommendationHistory.slice(0, 5).map(item => <div key={item.id} className="rounded-2xl border border-slate-800 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{item.title}</p><p className="mt-1 text-xs capitalize text-slate-500">{item.category} • {new Date(item.completedAt).toLocaleDateString()}</p></div><CheckCircle2 className="shrink-0 text-emerald-300" size={19}/></div>{item.estimatedBenefit > 0 && <p className="mt-3 text-sm font-semibold text-cyan-300">{money.format(item.estimatedBenefit)} estimated benefit</p>}</div>)}</div> : <Empty text={recommendationHistoryUnavailable ? 'Recommendation history is temporarily unavailable. You can still use the current Pilot recommendation and try again later.' : 'No completed recommendations yet. Mark the current Pilot recommendation complete to record your first win.'}/>}</Card>
     </section>
 
     {topGoal && <section className="mt-6"><Card title="Highest-priority unfinished goal"><div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="flex items-center gap-2"><Target className="text-cyan-300"/><p className="text-xl font-semibold">{topGoal.name}</p></div><p className="mt-2 text-sm text-slate-400">Priority {topGoal.priority} • {money.format(topGoal.currentAmount)} of {money.format(topGoal.targetAmount)}</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full bg-cyan-400" style={{ width: `${Math.min(100, topGoal.currentAmount / Math.max(1, topGoal.targetAmount) * 100)}%` }}/></div></div><a href="/goals" className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300">Manage goals</a></div></Card></section>}
@@ -403,9 +387,9 @@ export default function Home() {
 }
 
 function Card({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) { return <div className={`rounded-3xl border border-slate-800 bg-slate-900 p-6 ${className}`}><h2 className="mb-5 text-2xl font-semibold">{title}</h2>{children}</div>; }
-function Insight({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) { return <article className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><div className="text-cyan-300">{icon}</div><h3 className="mt-4 text-lg font-semibold leading-6">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p></article>; }
+function Insight({ icon, title, detail, tone }: { icon: React.ReactNode; title: string; detail: string; tone: 'positive' | 'neutral' | 'warning' }) { return <article className={`rounded-2xl border bg-slate-950/40 p-5 ${tone === 'warning' ? 'border-amber-400/25' : tone === 'positive' ? 'border-emerald-400/20' : 'border-slate-800'}`}><div className={tone === 'warning' ? 'text-amber-300' : tone === 'positive' ? 'text-emerald-300' : 'text-cyan-300'}>{icon}</div><h3 className="mt-4 text-lg font-semibold leading-6">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p></article>; }
 function Stat({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-medium">{value}</p></div>; }
 function Empty({ text }: { text: string }) { return <p className="rounded-xl border border-dashed border-slate-700 p-4 text-sm leading-6 text-slate-500">{text}</p>; }
-function HelpLabel({ label, help }: { label: string; help: string }) { return <span className="flex items-center gap-1.5"><span>{label}</span><span className="group relative inline-flex"><button type="button" aria-label={`About ${label}`} className="rounded-full text-slate-500 transition hover:text-cyan-300 focus:text-cyan-300"><Info size={14}/></button><span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-950 p-3 text-left text-xs leading-5 text-slate-300 shadow-xl group-hover:block group-focus-within:block">{help}</span></span></span>; }
+function HelpLabel({ label, help }: { label: string; help: string }) { return <span className="flex items-center gap-1.5"><span>{label}</span><span className="group relative inline-flex"><button type="button" aria-label={`About ${label}`} className="rounded-full text-slate-500 outline-none transition hover:text-cyan-300 focus-visible:text-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-300"><Info size={14}/></button><span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-950 p-3 text-left text-xs leading-5 text-slate-300 shadow-xl group-hover:block group-focus-within:block">{help}</span></span></span>; }
 function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="block text-xs text-slate-400">{label}<input className="field mt-1 w-full" value={value} onChange={e => onChange(e.target.value)}/></label>; }
 function NumberField({ label, value, onChange, step = '1', help }: { label: string; value: number; onChange: (value: number) => void; step?: string; help?: string }) { return <label className="block text-xs text-slate-400">{help ? <HelpLabel label={label} help={help}/> : label}<input className="field mt-1 w-full" type="number" step={step} value={value} onChange={e => onChange(Number(e.target.value))}/></label>; }

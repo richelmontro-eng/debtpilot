@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Activity, BarChart3, Beaker, Bot, CalendarRange, Car, Gauge, Inbox, LogOut, Menu, ReceiptText, Settings, Target, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createClient } from '../lib/supabase';
+import { APP_VERSION } from '../lib/version';
 
 const links = [
   { href: '/', label: 'Dashboard', icon: Gauge },
@@ -77,5 +78,5 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
 export function AccountPanel({ displayName, email, onSignOut }: { displayName: string; email: string; onSignOut: () => void }) {
   const initial = (displayName || email || 'D').charAt(0).toUpperCase();
-  return <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-cyan-400 font-semibold text-slate-950">{initial}</div><div className="min-w-0"><p className="truncate text-sm font-medium text-slate-200">{displayName || 'DebtPilot user'}</p><p className="truncate text-xs text-slate-500">{email}</p></div></div><div className="mt-4 grid gap-2"><Link href="/settings" className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 hover:bg-slate-800"><Settings size={15}/>Settings</Link><button type="button" onClick={onSignOut} className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-rose-300 hover:bg-rose-400/10"><LogOut size={15}/>Sign Out</button></div></div>;
+  return <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-cyan-400 font-semibold text-slate-950">{initial}</div><div className="min-w-0"><p className="truncate text-sm font-medium text-slate-200">{displayName || 'DebtPilot user'}</p><p className="truncate text-xs text-slate-500">{email}</p></div></div><div className="mt-4 grid gap-2"><Link href="/settings" className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-cyan-300"><Settings size={15}/>Settings</Link><button type="button" onClick={onSignOut} className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-rose-300 hover:bg-rose-400/10 focus-visible:ring-2 focus-visible:ring-cyan-300"><LogOut size={15}/>Sign Out</button></div><p className="mt-3 border-t border-slate-800 pt-3 text-center text-[11px] text-slate-600">DebtPilot v{APP_VERSION}</p></div>;
 }
