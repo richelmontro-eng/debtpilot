@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { LogOut, Save, Settings } from 'lucide-react';
+import { AlertTriangle, LogOut, Save, Settings, Trash2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
@@ -10,6 +10,7 @@ type Strategy = 'avalanche' | 'snowball';
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState('');
   const [userId, setUserId] = useState('');
   const [email, setEmail] = useState('');
@@ -18,6 +19,7 @@ export default function SettingsPage() {
   const [strategy, setStrategy] = useState<Strategy>('avalanche');
   const [cushion, setCushion] = useState(0);
   const [livingReserve, setLivingReserve] = useState(0);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
 
   useEffect(() => {
     const supabase = createClient();
@@ -64,7 +66,42 @@ export default function SettingsPage() {
     window.location.assign('/login');
   }
 
+  async function deleteAccount() {
+    const supabase = createClient();
+    if (!supabase || deleting || deleteConfirmation.trim().toLowerCase() !== email.toLowerCase()) return;
+    if (!window.confirm('Permanently delete your DebtPilot account and all saved financial data? This cannot be undone.')) return;
+
+    setDeleting(true);
+    setMessage('Deleting your account…');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      setMessage('Your session has expired. Sign in again before deleting your account.');
+      setDeleting(false);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/account/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ confirmation: deleteConfirmation.trim() }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? 'Account deletion failed.');
+      await supabase.auth.signOut({ scope: 'local' });
+      window.location.assign('/login?account_deleted=1');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Account deletion failed.');
+      setDeleting(false);
+    }
+  }
+
   if (loading) return <main className="grid min-h-screen place-items-center bg-slate-950 text-slate-100">Loading settings…</main>;
+
+  const deletionReady = Boolean(email) && deleteConfirmation.trim().toLowerCase() === email.toLowerCase();
 
   return <main className="min-h-screen bg-slate-950 text-slate-100"><div className="mx-auto max-w-5xl px-5 py-8">
     <header className="mb-8"><div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300"><Settings size={16}/> Settings</div><h1 className="text-4xl font-semibold">Your financial preferences.</h1><p className="mt-3 text-slate-400">These defaults are used across the dashboard, recommendations, payoff planner, forecast, and What-If Lab.</p></header>
@@ -73,8 +110,14 @@ export default function SettingsPage() {
       <Card title="Profile"><Field label="Display name"><input className="field mt-1 w-full" value={displayName} onChange={e => setDisplayName(e.target.value)}/></Field><Field label="Email"><input className="field mt-1 w-full opacity-70" value={email} disabled/></Field></Card>
       <Card title="Paycheck preferences"><Field label="Pay frequency"><select className="field mt-1 w-full" value={payFrequency} onChange={e => setPayFrequency(e.target.value as PayFrequency)}><option value="weekly">Weekly — 52 checks/year</option><option value="biweekly">Every 2 weeks — 26/year</option><option value="semimonthly">Twice monthly — 24/year</option><option value="monthly">Monthly — 12/year</option></select></Field><NumberField label="Living reserve per check" value={livingReserve} onChange={setLivingReserve}/></Card>
       <Card title="Financial guardrails"><NumberField label="Protected checking cushion" value={cushion} onChange={setCushion}/><Field label="Debt payoff strategy"><select className="field mt-1 w-full" value={strategy} onChange={e => setStrategy(e.target.value as Strategy)}><option value="avalanche">Avalanche — highest APR first</option><option value="snowball">Snowball — smallest balance first</option></select></Field></Card>
-      <Card title="About DebtPilot"><p className="text-2xl font-semibold">Version 0.9.0</p><p className="mt-3 text-sm leading-6 text-slate-400">Includes paycheck planning, goals, payoff projections, a 90-day forecast, financial inbox, saved vehicle comparisons, and the What-If Lab.</p><button onClick={signOut} className="mt-5 inline-flex items-center gap-2 rounded-xl border border-rose-400/25 px-4 py-3 text-sm text-rose-300"><LogOut size={17}/>Sign out</button></Card>
+      <Card title="About DebtPilot"><p className="text-2xl font-semibold">Version 0.15.0</p><p className="mt-3 text-sm leading-6 text-slate-400">Includes the Financial Command Center, reviewed transaction posting, forecasting, goals, payoff planning, vehicle comparisons, What-If scenarios, and Pilot recommendations.</p><button onClick={signOut} className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm text-slate-300"><LogOut size={17}/>Sign out</button></Card>
     </section>
+
+    <section className="mt-6 rounded-3xl border border-rose-400/25 bg-rose-400/5 p-6">
+      <div className="flex items-start gap-3"><AlertTriangle className="mt-1 shrink-0 text-rose-300" size={22}/><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-rose-300">Danger zone</p><h2 className="mt-2 text-2xl font-semibold">Delete account</h2><p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">Permanently deletes your login and all related DebtPilot data, including balances, debts, bills, goals, transactions, snapshots, and saved vehicle scenarios. This action cannot be undone.</p></div></div>
+      <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end"><Field label={`Type ${email || 'your email address'} to confirm`}><input className="field mt-1 w-full" value={deleteConfirmation} onChange={e => setDeleteConfirmation(e.target.value)} autoComplete="off"/></Field><button onClick={deleteAccount} disabled={!deletionReady || deleting} className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500 px-5 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"><Trash2 size={18}/>{deleting ? 'Deleting…' : 'Delete account permanently'}</button></div>
+    </section>
+
     <div className="mt-6 flex justify-end"><button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 disabled:opacity-60"><Save size={18}/>{saving ? 'Saving…' : 'Save settings'}</button></div>
   </div></main>;
 }
