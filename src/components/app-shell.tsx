@@ -50,8 +50,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="absolute inset-x-5 bottom-5">
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-xs leading-5 text-slate-500">
-          <p className="font-medium text-slate-300">DebtPilot v0.12.0</p>
-          <p>Manual transaction ledger and execution tracking.</p>
+          <p className="font-medium text-slate-300">DebtPilot v0.13.0</p>
+          <p>Reviewed transaction posting and atomic balance reconciliation.</p>
         </div>
       </div>
     </aside>
