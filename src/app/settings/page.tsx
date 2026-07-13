@@ -1,9 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, LogOut, Save, Settings, Trash2 } from 'lucide-react';
+import { AlertTriangle, LockKeyhole, LogOut, Save, Settings, Trash2 } from 'lucide-react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase';
 import InfoTooltip from '@/components/info-tooltip';
+import { PasswordFields } from '@/components/password-fields';
+import { isReauthenticationError, mapPasswordError, validateNewPassword } from '@/lib/password-management';
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 type Strategy = 'avalanche' | 'snowball';
@@ -21,6 +24,11 @@ export default function SettingsPage() {
   const [cushion, setCushion] = useState(0);
   const [livingReserve, setLivingReserve] = useState(0);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [needsRecovery, setNeedsRecovery] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -67,6 +75,22 @@ export default function SettingsPage() {
     window.location.assign('/login');
   }
 
+  async function updatePassword(event: React.FormEvent) {
+    event.preventDefault();
+    if (passwordBusy) return;
+    const validation = validateNewPassword(newPassword, confirmPassword);
+    if (validation) return setPasswordMessage(validation);
+    const supabase = createClient();
+    if (!supabase) return setPasswordMessage('We couldn’t update your password. Please try again.');
+    setPasswordBusy(true); setPasswordMessage(''); setNeedsRecovery(false);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) { setPasswordMessage(mapPasswordError(error)); setNeedsRecovery(isReauthenticationError(error)); }
+      else { setNewPassword(''); setConfirmPassword(''); setPasswordMessage('Password updated successfully.'); }
+    } catch { setPasswordMessage('We couldn’t update your password. Please try again.'); }
+    setPasswordBusy(false);
+  }
+
   async function deleteAccount() {
     const supabase = createClient();
     if (!supabase || deleting || deleteConfirmation.trim().toLowerCase() !== email.toLowerCase()) return;
@@ -111,6 +135,7 @@ export default function SettingsPage() {
       <Card title="Profile"><Field label="Display name"><input className="field mt-1 w-full" value={displayName} onChange={e => setDisplayName(e.target.value)}/></Field><Field label="Email"><input className="field mt-1 w-full opacity-70" value={email} disabled/></Field></Card>
       <Card title="Paycheck preferences"><Field label={<InfoTooltip label="Pay frequency">How often you receive regular pay. DebtPilot uses it to convert monthly bills and debt minimums into a per-paycheck reserve.</InfoTooltip>}><select className="field mt-1 w-full" value={payFrequency} onChange={e => setPayFrequency(e.target.value as PayFrequency)}><option value="weekly">Weekly — 52 checks/year</option><option value="biweekly">Every 2 weeks — 26/year</option><option value="semimonthly">Twice monthly — 24/year</option><option value="monthly">Monthly — 12/year</option></select></Field><NumberField label={<InfoTooltip label="Living reserve per check">Money protected for groceries, fuel, and everyday spending until your next paycheck. DebtPilot subtracts it before suggesting extra payments.</InfoTooltip>} value={livingReserve} onChange={setLivingReserve}/></Card>
       <Card title="Financial guardrails"><NumberField label={<InfoTooltip label="Protected checking cushion">The minimum balance you want left in checking after planned expenses. DebtPilot protects this amount before recommending optional debt or goal payments.</InfoTooltip>} value={cushion} onChange={setCushion}/><Field label="Debt payoff strategy"><select className="field mt-1 w-full" value={strategy} onChange={e => setStrategy(e.target.value as Strategy)}><option value="avalanche">Avalanche — highest APR first</option><option value="snowball">Snowball — smallest balance first</option></select></Field></Card>
+      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6"><div className="mb-5 flex items-center gap-2"><LockKeyhole className="text-cyan-300" size={21}/><h2 className="text-2xl font-semibold">Account &amp; Security</h2></div><form onSubmit={updatePassword}><PasswordFields password={newPassword} confirmation={confirmPassword} onPassword={setNewPassword} onConfirmation={setConfirmPassword} disabled={passwordBusy}/>{passwordMessage && <p role="status" aria-live="polite" className="mt-4 rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">{passwordMessage}</p>}{needsRecovery && <Link href="/forgot-password" className="mt-3 block text-sm font-semibold text-cyan-300">Send me a secure reset link</Link>}<button disabled={passwordBusy} className="mt-5 w-full rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 disabled:opacity-60">{passwordBusy ? 'Updating…' : 'Update password'}</button></form></section>
       <Card title="About DebtPilot"><p className="text-2xl font-semibold">Version 0.15.0</p><p className="mt-3 text-sm leading-6 text-slate-400">Includes the Financial Command Center, reviewed transaction posting, forecasting, goals, payoff planning, vehicle comparisons, What-If scenarios, and Pilot recommendations.</p><button onClick={signOut} className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm text-slate-300"><LogOut size={17}/>Sign out</button></Card>
     </section>
 

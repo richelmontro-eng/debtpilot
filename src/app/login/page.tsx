@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2 } from 'lucide-react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase';
 
 export default function LoginPage() {
@@ -70,7 +71,8 @@ export default function LoginPage() {
         <h1 className="mt-2 text-3xl font-semibold">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
         <p className="mt-2 text-sm leading-6 text-slate-400">{mode === 'login' ? 'Sign in to see where you stand and what to do next.' : 'Start building a clearer, more confident financial plan.'}</p>
         <label className="mt-6 block text-sm text-slate-300">Email<input className="field mt-2 w-full" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)}/></label>
-        <label className="mt-4 block text-sm text-slate-300">Password<input className="field mt-2 w-full" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={6} required value={password} onChange={e => setPassword(e.target.value)}/></label>
+        <label className="mt-4 block text-sm text-slate-300">Password<input className="field mt-2 w-full" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode === 'signup' ? 10 : undefined} required value={password} onChange={e => setPassword(e.target.value)}/></label>
+        {mode === 'login' && <Link href="/forgot-password" className="mt-3 block text-right text-sm text-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Forgot password?</Link>}
         {message && <p role="status" className="mt-4 rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">{message}</p>}
         <button disabled={busy} className="mt-5 w-full rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-60">{busy ? 'Working…' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
         <button type="button" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setMessage(''); }} className="mt-4 w-full text-sm text-cyan-300">{mode === 'login' ? 'Need an account? Create one' : 'Already registered? Sign in'}</button>

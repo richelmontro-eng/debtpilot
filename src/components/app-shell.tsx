@@ -25,7 +25,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [account, setAccount] = useState({ displayName: '', email: '' });
-  const isPublic = pathname === '/login' || pathname === '/welcome' || pathname.startsWith('/auth/');
+  const isPublic = pathname === '/login' || pathname === '/welcome' || pathname === '/forgot-password' || pathname === '/reset-password' || pathname.startsWith('/auth/');
 
   useEffect(() => {
     const supabase = createClient();
