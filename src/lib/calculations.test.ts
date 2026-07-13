@@ -27,6 +27,12 @@ describe('payoff engine', () => {
     const result = simulatePayoff([], 500, 'snowball');
     expect(result).toMatchObject({ months: 0, totalInterest: 0, paidOff: true });
   });
+
+  it('adds entered deferred interest after an expired promotion', () => {
+    const result = simulatePayoff([{ id: 'promo', name: 'Deferred card', balance: 100, apr: 0, minimum: 200, promotionType: 'deferred_interest', promotionalApr: 0, promotionEndDate: '2000-01-01', postPromotionApr: 0, estimatedDeferredInterest: 50 }], 0, 'avalanche');
+    expect(result.paidOff).toBe(true);
+    expect(result.totalInterest).toBe(50);
+  });
 });
 
 describe('cash-flow forecast engine', () => {

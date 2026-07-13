@@ -79,7 +79,7 @@ function pilotState(finances: PurchaseFinancialState, checking: number, debts: P
     checking,
     checkingCushion: finances.checkingCushion,
     strategy: finances.strategy,
-    debts: debts.map(debt => ({ id: debt.id, name: debt.name, balance: debt.balance, apr: debt.apr })),
+    debts: debts.map(debt => ({ ...debt })),
     goals: finances.goals,
     billsDueSoon: [],
   };

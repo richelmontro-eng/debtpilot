@@ -1,9 +1,17 @@
+import { getEffectiveApr, type PromotionDebt, type PromotionType } from './promotions';
+
 export type PayoffDebt = {
   id: string;
   name: string;
   balance: number;
   apr: number;
   minimum: number;
+  promotionType?: PromotionType;
+  promotionalApr?: number;
+  promotionEndDate?: string | null;
+  postPromotionApr?: number;
+  originalPromotionalBalance?: number;
+  estimatedDeferredInterest?: number;
 };
 
 export type PayoffResult = {
@@ -27,6 +35,7 @@ export function simulatePayoff(
       balance: Math.max(0, debt.balance),
       minimum: Number.isFinite(debt.minimum) ? Math.max(0, debt.minimum) : 0,
       apr: Number.isFinite(debt.apr) ? Math.max(0, debt.apr) : 0,
+      deferredApplied: false,
     }));
 
   if (!debts.length) {
@@ -38,10 +47,19 @@ export function simulatePayoff(
 
   while (month < maxMonths && debts.some(debt => debt.balance > 0.005)) {
     month += 1;
+    const simulationDate = new Date();
+    simulationDate.setMonth(simulationDate.getMonth() + month - 1);
 
     for (const debt of debts) {
       if (debt.balance <= 0) continue;
-      const interest = debt.balance * (debt.apr / 100 / 12);
+      const endDate = debt.promotionEndDate ? new Date(`${debt.promotionEndDate}T00:00:00`) : null;
+      if (debt.promotionType === 'deferred_interest' && endDate && simulationDate > endDate && !debt.deferredApplied) {
+        const deferredInterest = Math.max(0, debt.estimatedDeferredInterest ?? 0);
+        debt.balance += deferredInterest;
+        totalInterest += deferredInterest;
+        debt.deferredApplied = true;
+      }
+      const interest = debt.balance * (getEffectiveApr(debt as PromotionDebt, simulationDate) / 100 / 12);
       debt.balance += interest;
       totalInterest += interest;
     }
@@ -66,7 +84,9 @@ export function simulatePayoff(
       paymentPool -= payment;
     }
 
-    const nextMonthInterest = debts.reduce((sum, debt) => sum + debt.balance * (debt.apr / 100 / 12), 0);
+    const nextDate = new Date(simulationDate);
+    nextDate.setMonth(nextDate.getMonth() + 1);
+    const nextMonthInterest = debts.reduce((sum, debt) => sum + debt.balance * (getEffectiveApr(debt as PromotionDebt, nextDate) / 100 / 12), 0);
     const nextMonthPayment = debts.reduce((sum, debt) => sum + (debt.balance > 0 ? debt.minimum : 0), 0) + safeExtra;
     if (nextMonthPayment <= nextMonthInterest && debts.some(debt => debt.balance > 0)) {
       return { months: month, totalInterest, debtFreeDate: null, paidOff: false };

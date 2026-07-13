@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getPilotBriefing, getPilotRecommendation, getRecommendationId } from './engine';
 import type { PilotFinancialState } from './types';
+import { rankDebts } from './rules';
 
 const base: PilotFinancialState = {
   availableBeforeCushion: 500,
@@ -18,6 +19,16 @@ const base: PilotFinancialState = {
 };
 
 describe('Pilot recommendation engine', () => {
+  it('prioritizes a deferred-interest deadline without treating the post-promotion APR as active', () => {
+    const end = new Date();
+    end.setDate(end.getDate() + 90);
+    const promotionalDebt = { id: 'promo', name: 'Promo card', balance: 3_000, apr: 29, minimum: 50, promotionType: 'deferred_interest' as const, promotionalApr: 0, promotionEndDate: end.toISOString().slice(0, 10), postPromotionApr: 29, estimatedDeferredInterest: 700 };
+    const result = getPilotRecommendation({ ...base, debts: [promotionalDebt], payPeriodsPerYear: 26 });
+    expect(result.title).toContain('Promo card');
+    expect(result.description).toContain('30 days early');
+    expect(rankDebts([promotionalDebt, { id: 'active', name: 'Active card', balance: 1_000, apr: 10 }], 'avalanche')[0].id).toBe('active');
+  });
+
   it('preserves the required-expenses recommendation', () => {
     const result = getPilotRecommendation({ ...base, availableBeforeCushion: 0, safeExtra: 0 });
     expect(result).toMatchObject({

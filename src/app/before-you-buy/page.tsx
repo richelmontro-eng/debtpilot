@@ -49,7 +49,7 @@ export default function BeforeYouBuyPage() {
         checking: Number(profile?.checking_balance ?? 0), savings: Number(profile?.savings_balance ?? 0),
         checkingCushion: Number(profile?.checking_cushion ?? 0), livingPerCheck: Number(profile?.weekly_living_reserve ?? 0),
         monthlyBills, strategy: profile?.preferred_strategy === 'snowball' ? 'snowball' : 'avalanche',
-        debts: (debts ?? []).map(debt => ({ id: debt.id, name: debt.name, balance: Number(debt.balance), apr: Number(debt.apr), minimum: Number(debt.minimum_payment) })),
+        debts: (debts ?? []).map(debt => ({ id: debt.id, name: debt.name, balance: Number(debt.balance), apr: Number(debt.apr), minimum: Number(debt.minimum_payment), promotionType: debt.promotion_type ?? 'none', promotionalApr: Number(debt.promotional_apr ?? 0), promotionEndDate: debt.promotion_end_date, postPromotionApr: Number(debt.post_promotion_apr ?? debt.apr), originalPromotionalBalance: Number(debt.original_promotional_balance ?? debt.balance), estimatedDeferredInterest: Number(debt.estimated_deferred_interest ?? 0) })),
         goals: (goals ?? []).map(goal => ({ id: goal.id, name: goal.name, goalType: goal.goal_type, targetAmount: Number(goal.target_amount), currentAmount: Number(goal.current_amount), priority: Number(goal.priority) })),
       });
       try {

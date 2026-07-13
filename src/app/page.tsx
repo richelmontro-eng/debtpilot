@@ -8,9 +8,10 @@ import { createClient } from '@/lib/supabase';
 import { getRecommendationId, type CompletedRecommendation, type PilotCategory } from '@/lib/pilot';
 import { buildCommandCenter, getSafeDashboardError } from '@/lib/intelligence';
 import PilotReasoning from '@/components/pilot-reasoning';
+import { analyzePromotion, promotionStatusLabel } from '@/lib/promotions';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 
-type Debt = { id: string; name: string; balance: number; apr: number; minimum: number };
+type Debt = { id: string; name: string; balance: number; apr: number; minimum: number; promotionType: 'none' | 'zero_percent' | 'deferred_interest'; promotionalApr: number; promotionEndDate: string; postPromotionApr: number; originalPromotionalBalance: number; estimatedDeferredInterest: number };
 type Bill = { id: string; name: string; amount: number; dueDay: number; frequency: string };
 type Goal = { id: string; name: string; goalType: string; targetAmount: number; currentAmount: number; priority: number };
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
@@ -52,6 +53,12 @@ async function saveDebtsSafely(supabase: SupabaseClient, userId: string, debts: 
       balance: Math.max(0, debt.balance),
       apr: Math.max(0, debt.apr),
       minimum_payment: Math.max(0, debt.minimum),
+      promotion_type: debt.promotionType,
+      promotional_apr: Math.max(0, debt.promotionalApr),
+      promotion_end_date: debt.promotionEndDate || null,
+      post_promotion_apr: Math.max(0, debt.postPromotionApr),
+      original_promotional_balance: Math.max(0, debt.originalPromotionalBalance),
+      estimated_deferred_interest: Math.max(0, debt.estimatedDeferredInterest),
     };
     const query = debt.id.startsWith('new-')
       ? supabase.from('debts').insert(payload)
@@ -175,7 +182,7 @@ export default function Home() {
         setCheckingCushion(Number(profile.checking_cushion));
         setStrategy(profile.preferred_strategy === 'snowball' ? 'snowball' : 'avalanche');
       }
-      setDebts((debtResult.data ?? []).map(row => ({ id: row.id, name: row.name, balance: Number(row.balance), apr: Number(row.apr), minimum: Number(row.minimum_payment) })));
+      setDebts((debtResult.data ?? []).map(row => ({ id: row.id, name: row.name, balance: Number(row.balance), apr: Number(row.apr), minimum: Number(row.minimum_payment), promotionType: row.promotion_type ?? 'none', promotionalApr: Number(row.promotional_apr ?? 0), promotionEndDate: row.promotion_end_date ?? '', postPromotionApr: Number(row.post_promotion_apr ?? row.apr ?? 0), originalPromotionalBalance: Number(row.original_promotional_balance ?? row.balance ?? 0), estimatedDeferredInterest: Number(row.estimated_deferred_interest ?? 0) })));
       setBills((billResult.data ?? []).map(row => ({ id: row.id, name: row.name, amount: Number(row.amount), dueDay: Number(row.due_day ?? 1), frequency: row.frequency ?? 'monthly' })));
       setGoals((goalResult.data ?? []).map(row => ({ id: row.id, name: row.name, goalType: row.goal_type, targetAmount: Number(row.target_amount), currentAmount: Number(row.current_amount), priority: Number(row.priority) })));
       setRecommendationHistory((historyResult.data ?? []).map(row => ({
@@ -221,6 +228,7 @@ export default function Home() {
       ...bill,
       dueInDays: bill.frequency === 'weekly' ? 0 : daysUntilDue(bill.dueDay),
     })),
+    payPeriodsPerYear: schedule.periods,
   };
   const commandCenter = buildCommandCenter({ now: new Date(), cycleDays: schedule.cycleDays, financialState, checking, checkingCushion, billsReserve, debts, bills, goals, recommendationHistory });
   const briefing = commandCenter.pilot;
@@ -273,12 +281,12 @@ export default function Home() {
   }
 
   function updateDebt(id: string, field: keyof Debt, value: string) {
-    setDebts(items => items.map(item => item.id === id ? { ...item, [field]: field === 'name' ? value : Number(value) } : item));
+    setDebts(items => items.map(item => item.id === id ? { ...item, [field]: field === 'name' || field === 'promotionType' || field === 'promotionEndDate' ? value : Number(value) } : item));
   }
   function updateBill(id: string, field: keyof Bill, value: string) {
     setBills(items => items.map(item => item.id === id ? { ...item, [field]: field === 'name' || field === 'frequency' ? value : Number(value) } : item));
   }
-  function addDebt() { setDebts(items => [...items, { id: `new-${crypto.randomUUID()}`, name: 'New debt', balance: 0, apr: 0, minimum: 0 }]); }
+  function addDebt() { setDebts(items => [...items, { id: `new-${crypto.randomUUID()}`, name: 'New debt', balance: 0, apr: 0, minimum: 0, promotionType: 'none', promotionalApr: 0, promotionEndDate: '', postPromotionApr: 0, originalPromotionalBalance: 0, estimatedDeferredInterest: 0 }]); }
   function addBill() { setBills(items => [...items, { id: `new-${crypto.randomUUID()}`, name: 'New bill', amount: 0, dueDay: 1, frequency: 'monthly' }]); }
 
   async function save() {
@@ -380,7 +388,7 @@ export default function Home() {
       </div>
 
       <div id="debts">
-      <Card title="Debt accounts"><button onClick={addDebt} className="mb-4 inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300"><Plus size={16}/>Add debt</button><div className="space-y-3">{debts.length === 0 && <Empty text="Add each credit card or loan with its balance, APR, and monthly minimum."/>}{debts.map(debt => <div key={debt.id} className="grid gap-3 rounded-2xl border border-slate-800 p-4 sm:grid-cols-[1.4fr_1fr_1fr_1fr_auto] sm:items-end"><TextField label="Account" value={debt.name} onChange={value => updateDebt(debt.id, 'name', value)}/><NumberField label="Balance" value={debt.balance} onChange={value => updateDebt(debt.id, 'balance', String(value))}/><NumberField label="APR %" value={debt.apr} onChange={value => updateDebt(debt.id, 'apr', String(value))} step="0.01"/><NumberField label="Monthly minimum" value={debt.minimum} onChange={value => updateDebt(debt.id, 'minimum', String(value))}/><button aria-label={`Remove ${debt.name}`} onClick={() => setDebts(items => items.filter(item => item.id !== debt.id))} className="rounded-xl border border-rose-400/20 p-3 text-rose-300"><Trash2 size={17}/></button></div>)}</div></Card>
+      <Card title="Debt accounts"><button onClick={addDebt} className="mb-4 inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300"><Plus size={16}/>Add debt</button><div className="space-y-3">{debts.length === 0 && <Empty text="Add each credit card or loan with its balance, APR, monthly minimum, and any promotional terms."/>}{debts.map(debt => <div key={debt.id} className="rounded-2xl border border-slate-800 p-4"><div className="grid gap-3 sm:grid-cols-[1.4fr_1fr_1fr_1fr_auto] sm:items-end"><TextField label="Account" value={debt.name} onChange={value => updateDebt(debt.id, 'name', value)}/><NumberField label="Balance" value={debt.balance} onChange={value => updateDebt(debt.id, 'balance', String(value))}/><NumberField label="Regular APR %" value={debt.apr} onChange={value => updateDebt(debt.id, 'apr', String(value))} step="0.01"/><NumberField label="Monthly minimum" value={debt.minimum} onChange={value => updateDebt(debt.id, 'minimum', String(value))}/><button aria-label={`Remove ${debt.name}`} onClick={() => setDebts(items => items.filter(item => item.id !== debt.id))} className="rounded-xl border border-rose-400/20 p-3 text-rose-300"><Trash2 size={17}/></button></div><PromotionFields debt={debt} periods={schedule.periods} update={(field, value) => updateDebt(debt.id, field, value)}/></div>)}</div></Card>
       </div>
     </section>
 
@@ -395,3 +403,4 @@ function Empty({ text }: { text: string }) { return <p className="rounded-xl bor
 function HelpLabel({ label, help }: { label: string; help: string }) { return <span className="flex items-center gap-1.5"><span>{label}</span><span className="group relative inline-flex"><button type="button" aria-label={`About ${label}`} className="rounded-full text-slate-500 outline-none transition hover:text-cyan-300 focus-visible:text-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-300"><Info size={14}/></button><span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-950 p-3 text-left text-xs leading-5 text-slate-300 shadow-xl group-hover:block group-focus-within:block">{help}</span></span></span>; }
 function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="block text-xs text-slate-400">{label}<input className="field mt-1 w-full" value={value} onChange={e => onChange(e.target.value)}/></label>; }
 function NumberField({ label, value, onChange, step = '1', help }: { label: string; value: number; onChange: (value: number) => void; step?: string; help?: string }) { return <label className="block text-xs text-slate-400">{help ? <HelpLabel label={label} help={help}/> : label}<input className="field mt-1 w-full" type="number" step={step} value={value} onChange={e => onChange(Number(e.target.value))}/></label>; }
+function PromotionFields({ debt, periods, update }: { debt: Debt; periods: number; update: (field: keyof Debt, value: string) => void }) { const analysis = analyzePromotion(debt, { payPeriodsPerYear: periods, plannedMonthlyPayment: debt.minimum }); return <div className="mt-4 border-t border-slate-800 pt-4"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><label className="text-xs text-slate-400"><HelpLabel label="Promotion type" help="Choose 0% promotional APR when interest does not accrue during the offer. Choose deferred interest when backdated interest may apply if the balance is not fully paid by the deadline."/><select className="field mt-1 w-full" value={debt.promotionType} onChange={event => update('promotionType', event.target.value)}><option value="none">None</option><option value="zero_percent">0% promotional APR</option><option value="deferred_interest">Deferred interest</option></select></label>{debt.promotionType !== 'none' && <><NumberField label="Promotional APR %" value={debt.promotionalApr} onChange={value => update('promotionalApr', String(value))} step="0.01"/><label className="text-xs text-slate-400">Promotion end date<input type="date" className="field mt-1 w-full" value={debt.promotionEndDate} onChange={event => update('promotionEndDate', event.target.value)}/></label><NumberField label="Post-promotion APR %" value={debt.postPromotionApr} onChange={value => update('postPromotionApr', String(value))} step="0.01"/><NumberField label="Original promotional balance" value={debt.originalPromotionalBalance} onChange={value => update('originalPromotionalBalance', String(value))}/>{debt.promotionType === 'deferred_interest' && <NumberField label="Estimated deferred interest" value={debt.estimatedDeferredInterest} onChange={value => update('estimatedDeferredInterest', String(value))}/>}</>}</div>{debt.promotionType !== 'none' && <><p className="mt-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-xs leading-5 text-slate-400">{debt.promotionType === 'zero_percent' ? 'No interest accrues during the promotional period. After it ends, the regular APR applies to any remaining balance.' : 'No interest is charged if the promotional balance is paid in full before the deadline. If it is not, the lender may charge interest dating back to the original purchase.'}</p><div className={`mt-3 rounded-xl border p-3 text-sm ${analysis.status === 'on_track' ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200' : analysis.status === 'expired' || analysis.status === 'at_risk' ? 'border-rose-400/25 bg-rose-400/10 text-rose-200' : 'border-amber-400/25 bg-amber-400/10 text-amber-200'}`}><p className="font-semibold">{promotionStatusLabel(analysis.status)}</p><p className="mt-1 text-xs">{analysis.daysRemaining} days remaining · {money.format(analysis.requiredPerPaycheck)} required per paycheck · safety target {analysis.safetyTargetDate?.toLocaleDateString() ?? 'unavailable'} · projected payoff {analysis.projectedPayoffDate?.toLocaleDateString() ?? 'not projected'}</p></div></>}</div>; }

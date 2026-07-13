@@ -2,6 +2,7 @@ import { explain } from './explain';
 import { HIGH_APR, isEarlyEmergencyGoal, rankDebts, rankIncompleteGoals, VERY_HIGH_APR } from './rules';
 import { confidence, getFinancialPulse, recommendationPriority } from './score';
 import type { FinancialInboxItem, PilotBriefing, PilotCategory, PilotFinancialState, Recommendation } from './types';
+import { analyzePromotion, getEffectiveApr } from '../promotions';
 
 const money = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -50,8 +51,24 @@ export function getPilotRecommendation(state: PilotFinancialState): Recommendati
     });
   }
 
+  const promotionPriority = state.debts
+    .map(debt => ({ debt, analysis: analyzePromotion(debt, { payPeriodsPerYear: state.payPeriodsPerYear ?? 52, plannedMonthlyPayment: debt.minimum ?? 0 }) }))
+    .filter(item => item.analysis.status === 'at_risk' || item.analysis.status === 'needs_higher_payment')
+    .sort((a, b) => (a.analysis.daysRemaining ?? Infinity) - (b.analysis.daysRemaining ?? Infinity))[0];
+  if (state.safeExtra > 0 && promotionPriority) {
+    const { debt, analysis } = promotionPriority;
+    const amount = Math.min(state.safeExtra, analysis.requiredPerPaycheck, debt.balance);
+    const interestRisk = analysis.estimatedInterestAtRisk;
+    return recommendation({
+      category: 'debt', amount, targetId: debt.id,
+      confidence: analysis.status === 'at_risk' ? 99 : 96,
+      title: `Pay at least ${money.format(amount)} toward ${debt.name} this paycheck.`,
+      description: `${debt.name}'s ${debt.promotionType === 'deferred_interest' ? 'deferred-interest' : 'promotional-rate'} deadline is in ${analysis.daysRemaining} days. The safety plan targets payoff 30 days early${interestRisk > 0 ? ` to avoid approximately ${money.format(interestRisk)} in deferred interest` : ''}.`,
+    });
+  }
+
   const emergencyIsEarly = isEarlyEmergencyGoal(emergencyGoal, state.monthlyIncome);
-  const veryHighAprDebt = debtTarget && debtTarget.apr >= VERY_HIGH_APR;
+  const veryHighAprDebt = debtTarget && getEffectiveApr(debtTarget) >= VERY_HIGH_APR;
   if (state.safeExtra > 0 && emergencyIsEarly && emergencyGoal && (!veryHighAprDebt || emergencyGoal.priority === 1)) {
     const amount = Math.min(state.safeExtra, emergencyGoal.targetAmount - emergencyGoal.currentAmount);
     return recommendation({
@@ -61,14 +78,14 @@ export function getPilotRecommendation(state: PilotFinancialState): Recommendati
     });
   }
 
-  if (state.safeExtra > 0 && debtTarget && (debtTarget.apr >= HIGH_APR || !topGoal || topGoal.priority > 1)) {
+  if (state.safeExtra > 0 && debtTarget && (getEffectiveApr(debtTarget) >= HIGH_APR || !topGoal || topGoal.priority > 1)) {
     const amount = Math.min(state.safeExtra, debtTarget.balance);
     const description = state.strategy === 'avalanche'
-      ? `${debtTarget.name} is the highest-APR debt at ${debtTarget.apr.toFixed(2)}%, so this payment is expected to reduce interest most efficiently.`
+      ? `${debtTarget.name} is the highest-APR debt at ${getEffectiveApr(debtTarget).toFixed(2)}% based on currently active rates, so this payment is expected to reduce interest most efficiently.`
       : `${debtTarget.name} has the smallest remaining balance, creating the fastest payoff win under your snowball strategy.`;
     return recommendation({
       category: 'debt', amount, targetId: debtTarget.id,
-      confidence: debtTarget.apr >= VERY_HIGH_APR ? confidence.expensiveDebt : confidence.debt,
+      confidence: getEffectiveApr(debtTarget) >= VERY_HIGH_APR ? confidence.expensiveDebt : confidence.debt,
       title: `Pay ${money.format(amount)} toward ${debtTarget.name}.`,
       description,
     });

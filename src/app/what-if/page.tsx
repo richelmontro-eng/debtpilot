@@ -81,6 +81,7 @@ export default function WhatIfPage() {
         balance: Number(row.balance),
         apr: Number(row.apr),
         minimum: Number(row.minimum_payment),
+        promotionType: row.promotion_type ?? 'none', promotionalApr: Number(row.promotional_apr ?? 0), promotionEndDate: row.promotion_end_date, postPromotionApr: Number(row.post_promotion_apr ?? row.apr), originalPromotionalBalance: Number(row.original_promotional_balance ?? row.balance), estimatedDeferredInterest: Number(row.estimated_deferred_interest ?? 0),
       })));
       setLoading(false);
     })();

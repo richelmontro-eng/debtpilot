@@ -7,6 +7,13 @@ export type PilotDebt = {
   name: string;
   balance: number;
   apr: number;
+  minimum?: number;
+  promotionType?: 'none' | 'zero_percent' | 'deferred_interest';
+  promotionalApr?: number;
+  promotionEndDate?: string | null;
+  postPromotionApr?: number;
+  originalPromotionalBalance?: number;
+  estimatedDeferredInterest?: number;
 };
 
 export type PilotGoal = {
@@ -39,6 +46,7 @@ export type PilotFinancialState = {
   debts: PilotDebt[];
   goals: PilotGoal[];
   billsDueSoon: PilotBill[];
+  payPeriodsPerYear?: number;
 };
 
 export type RecommendationAction = {

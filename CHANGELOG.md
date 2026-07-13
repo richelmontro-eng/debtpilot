@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.23.0 — Promotional interest debts
+
+- Added 0% APR and deferred-interest debt terms, deadline calculations, payoff simulation, and status cards.
+- Added 30-day safety targets, promotion-aware Pilot priority, timeline events, and deterministic risk insights.
+- Added an additive RLS-compatible debt migration for promotional terms.
+
 ## 0.22.0 — Pilot Intelligence Platform
 
 - Added one shared event model for income, bills, debt, goals, health, recommendations, and purchase analyses.

@@ -38,6 +38,7 @@ Status legend: ✅ Completed · 🚧 In progress · 🗓️ Planned
 - ✅ Shared Pilot Intelligence Platform foundation
 - ✅ Unified financial events and deterministic insight models
 - ✅ Internal weekly brief generation service
+- ✅ Promotional and deferred-interest debt intelligence
 - 🗓️ Rolling 30/60/90-day financial plan
 - 🗓️ Proactive risk detection and prioritized planning agenda
 - 🗓️ Life-event and irregular-income planning

@@ -1,6 +1,7 @@
 import type { CompletedRecommendation, FinancialPulse, Recommendation } from '../pilot';
 import type { DashboardBill, DashboardDebt, DashboardGoal } from '../dashboard-intelligence';
 import type { FinancialEvent, TimelineGroup } from './types';
+import { analyzePromotion } from '../promotions';
 
 const dayMs = 86400000;
 
@@ -22,6 +23,7 @@ export function deriveFinancialEvents(input: {
   now: Date;
   cycleDays: number;
   payPerCheck: number;
+  payPeriodsPerYear?: number;
   bills: DashboardBill[];
   debts: DashboardDebt[];
   goals: DashboardGoal[];
@@ -41,7 +43,9 @@ export function deriveFinancialEvents(input: {
     events.push({ id: `bill-${bill.id}`, type: 'bill', occurredAt: date.toISOString(), status: 'projected', title: bill.name, summary: 'Expected bill from the saved schedule.', amount: bill.amount, direction: 'outflow', sourceId: bill.id });
   }
   for (const debt of input.debts.filter(item => item.balance > 0)) {
-    events.push({ id: `debt-${debt.id}`, type: 'debt', occurredAt: startOfDay(input.now).toISOString(), status: 'posted', title: `${debt.name} balance`, summary: `${debt.apr.toFixed(2)}% APR with a recorded monthly minimum.`, amount: debt.balance, direction: 'neutral', sourceId: debt.id });
+    const promotion = analyzePromotion(debt, { now: input.now, payPeriodsPerYear: input.payPeriodsPerYear ?? 12, plannedMonthlyPayment: debt.minimum });
+    const promotional = promotion.status !== 'none';
+    events.push({ id: `debt-${debt.id}`, type: 'debt', occurredAt: startOfDay(input.now).toISOString(), status: 'posted', title: promotional ? `${debt.name} promotion status` : `${debt.name} balance`, summary: promotional ? `${debt.promotionType === 'deferred_interest' ? 'Deferred-interest' : '0% promotional APR'} promotion expires in ${promotion.daysRemaining} days.` : `${debt.apr.toFixed(2)}% APR with a recorded monthly minimum.`, amount: debt.balance, direction: 'neutral', sourceId: debt.id, metadata: promotional ? { promotionStatus: promotion.status, daysRemaining: promotion.daysRemaining, requiredPerPaycheck: promotion.requiredPerPaycheck, interestAtRisk: promotion.estimatedInterestAtRisk } : undefined });
   }
   for (const goal of input.goals.filter(item => item.targetAmount > 0 && item.currentAmount >= item.targetAmount)) {
     events.push({ id: `goal-${goal.id}`, type: 'goal', occurredAt: startOfDay(input.now).toISOString(), status: 'completed', title: `${goal.name} target reached`, summary: 'Saved goal progress reached the target.', amount: goal.currentAmount, direction: 'neutral', sourceId: goal.id });

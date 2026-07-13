@@ -1,6 +1,6 @@
 import type { FinancialPulse, Recommendation } from './pilot';
 
-export type DashboardDebt = { id: string; name: string; balance: number; apr: number; minimum: number };
+export type DashboardDebt = { id: string; name: string; balance: number; apr: number; minimum: number; promotionType?: 'none' | 'zero_percent' | 'deferred_interest'; promotionalApr?: number; promotionEndDate?: string | null; postPromotionApr?: number; originalPromotionalBalance?: number; estimatedDeferredInterest?: number };
 export type DashboardBill = { id: string; name: string; amount: number; dueDay: number | null; frequency: string };
 export type DashboardGoal = { id: string; name: string; goalType: string; targetAmount: number; currentAmount: number; priority: number };
 

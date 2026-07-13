@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, CalendarClock, CircleDollarSign, TrendingDown } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { PayoffDebt, simulatePayoff } from '@/lib/payoff';
+import { analyzePromotion, promotionStatusLabel } from '@/lib/promotions';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
@@ -43,6 +44,7 @@ export default function PayoffPage() {
         balance: Number(row.balance),
         apr: Number(row.apr),
         minimum: Number(row.minimum_payment),
+        promotionType: row.promotion_type ?? 'none', promotionalApr: Number(row.promotional_apr ?? 0), promotionEndDate: row.promotion_end_date, postPromotionApr: Number(row.post_promotion_apr ?? row.apr), originalPromotionalBalance: Number(row.original_promotional_balance ?? row.balance), estimatedDeferredInterest: Number(row.estimated_deferred_interest ?? 0),
       })));
       setLoading(false);
     })();
@@ -54,6 +56,7 @@ export default function PayoffPage() {
   const monthsSaved = minimumOnly.paidOff && withExtra.paidOff ? Math.max(0, minimumOnly.months - withExtra.months) : 0;
   const interestSaved = minimumOnly.paidOff && withExtra.paidOff ? Math.max(0, minimumOnly.totalInterest - withExtra.totalInterest) : 0;
   const totalDebt = debts.reduce((sum, debt) => sum + debt.balance, 0);
+  const promotions = debts.filter(debt => debt.promotionType && debt.promotionType !== 'none').map(debt => ({ debt, analysis: analyzePromotion(debt, { payPeriodsPerYear: 52, plannedMonthlyPayment: debt.minimum + monthlyExtra }) }));
 
   if (loading) return <main className="grid min-h-screen place-items-center bg-slate-950 text-slate-100">Calculating payoff plan…</main>;
 
@@ -75,6 +78,8 @@ export default function PayoffPage() {
         <Metric icon={<TrendingDown/>} label="Months saved" value={`${monthsSaved}`}/>
         <Metric icon={<CircleDollarSign/>} label="Interest saved" value={money.format(interestSaved)} accent/>
       </section>
+
+      {promotions.length > 0 && <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-900 p-6"><h2 className="text-2xl font-semibold">Promotional interest status</h2><div className="mt-5 grid gap-4 md:grid-cols-2">{promotions.map(({ debt, analysis }) => <article key={debt.id} className={`rounded-2xl border p-5 ${analysis.status === 'on_track' ? 'border-emerald-400/25 bg-emerald-400/10' : analysis.status === 'at_risk' || analysis.status === 'expired' ? 'border-rose-400/25 bg-rose-400/10' : 'border-amber-400/25 bg-amber-400/10'}`}><p className="text-sm text-slate-400">{debt.name}</p><p className="mt-2 text-2xl font-semibold">{promotionStatusLabel(analysis.status)}</p><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><p className="text-slate-500">Days remaining</p><p className="mt-1 font-medium">{analysis.daysRemaining}</p></div><div><p className="text-slate-500">Payments remaining</p><p className="mt-1 font-medium">{analysis.paymentsRemainingBeforeDeadline}</p></div><div><p className="text-slate-500">Required monthly</p><p className="mt-1 font-medium">{money.format(analysis.requiredMonthlyPayment)}</p></div><div><p className="text-slate-500">Required weekly</p><p className="mt-1 font-medium">{money.format(analysis.requiredPerPaycheck)}</p></div></div>{analysis.estimatedInterestAtRisk > 0 && <p className="mt-4 text-sm text-rose-200">Approximately {money.format(analysis.estimatedInterestAtRisk)} in deferred interest is at risk.</p>}</article>)}</div></section>}
 
       <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.4fr]">
         <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">

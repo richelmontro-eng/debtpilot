@@ -1,4 +1,5 @@
 import type { DebtStrategy, PilotDebt, PilotGoal } from './types';
+import { getEffectiveApr } from '../promotions';
 
 export const VERY_HIGH_APR = 20;
 export const HIGH_APR = 10;
@@ -6,7 +7,7 @@ export const HIGH_APR = 10;
 export function rankDebts(debts: PilotDebt[], strategy: DebtStrategy) {
   return [...debts]
     .filter(debt => debt.balance > 0)
-    .sort((a, b) => strategy === 'avalanche' ? b.apr - a.apr : a.balance - b.balance);
+    .sort((a, b) => strategy === 'avalanche' ? getEffectiveApr(b) - getEffectiveApr(a) : a.balance - b.balance);
 }
 
 export function rankIncompleteGoals(goals: PilotGoal[]) {
