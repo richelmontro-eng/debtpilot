@@ -35,6 +35,9 @@ Status legend: ✅ Completed · 🚧 In progress · 🗓️ Planned
 
 ## Milestone 4 — Personal CFO
 
+- ✅ Shared Pilot Intelligence Platform foundation
+- ✅ Unified financial events and deterministic insight models
+- ✅ Internal weekly brief generation service
 - 🗓️ Rolling 30/60/90-day financial plan
 - 🗓️ Proactive risk detection and prioritized planning agenda
 - 🗓️ Life-event and irregular-income planning

@@ -59,6 +59,7 @@ DebtPilot first reserves bills, living needs, debt minimums, and the user-define
 
 - Financial Command Center briefing
 - Pilot Intelligence Engine and explainable recommendations
+- Pilot Intelligence Platform: shared events, insights, command-center models, and weekly briefs
 - Paycheck, bill, debt, goal, transaction, and cash-flow planning
 - Financial health, net-worth, payoff, vehicle, and what-if analysis
 - Guided onboarding and durable cross-device account access
@@ -71,3 +72,7 @@ DebtPilot first reserves bills, living needs, debt minimums, and the user-define
 4. Personal CFO — proactive planning across goals, risks, and life events.
 5. Automation — permissioned synchronization, monitoring, and safe execution support.
 6. Premium Intelligence — advanced forecasting, household collaboration, and expert-grade analysis.
+
+## Intelligence architecture
+
+Pilot is the single deterministic decision authority. Financial data is normalized into shared events, events and saved state produce explainable insights, and composed intelligence models feed every briefing, timeline, coach, and history view. New product surfaces should consume these models instead of reimplementing prioritization or financial rules.

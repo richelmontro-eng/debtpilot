@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowRight, CalendarDays, CheckCircle2, Clock3, CreditCard, Gauge, Info, ListChecks, LogOut, Plus, Save, Target, Trash2, Trophy, WalletCards } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
-import { getPilotBriefing, getRecommendationId, type CompletedRecommendation, type PilotCategory } from '@/lib/pilot';
-import { getBriefingSummary, getDeterministicInsights, getGroupedTimeline, getMissingInformation, getSafeDashboardError } from '@/lib/dashboard-intelligence';
+import { getRecommendationId, type CompletedRecommendation, type PilotCategory } from '@/lib/pilot';
+import { buildCommandCenter, getSafeDashboardError } from '@/lib/intelligence';
 import PilotReasoning from '@/components/pilot-reasoning';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 
@@ -205,7 +205,7 @@ export default function Home() {
   const annualIncome = payPerCheck * schedule.periods;
   const monthlyIncome = annualIncome / 12;
 
-  const briefing = getPilotBriefing({
+  const financialState = {
     availableBeforeCushion,
     cushionGap,
     safeExtra,
@@ -221,14 +221,16 @@ export default function Home() {
       ...bill,
       dueInDays: bill.frequency === 'weekly' ? 0 : daysUntilDue(bill.dueDay),
     })),
-  });
+  };
+  const commandCenter = buildCommandCenter({ now: new Date(), cycleDays: schedule.cycleDays, financialState, checking, checkingCushion, billsReserve, debts, bills, goals, recommendationHistory });
+  const briefing = commandCenter.pilot;
   const pilot = briefing.recommendation;
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening';
-  const briefingSummary = getBriefingSummary({ pulse: briefing.pulse, safeExtra, availableBeforeCushion, cushionGap, recommendation: pilot });
+  const briefingSummary = commandCenter.briefing;
   const timeHorizon = pilot.category === 'cushion' ? 'Before optional spending' : pilot.category === 'none' ? 'Through next payday' : 'This pay cycle';
-  const missingInformation = getMissingInformation({ payPerCheck, checkingCushion, debts, bills, goals });
-  const pilotInsights = getDeterministicInsights({ checking, checkingCushion, safeExtra, billsReserve, payPerCheck, debts, goals });
-  const timeline = getGroupedTimeline({ now: new Date(), cycleDays: schedule.cycleDays, payPerCheck, bills, goals, recommendation: pilot });
+  const missingInformation = commandCenter.missingInformation;
+  const pilotInsights = commandCenter.insights;
+  const timeline = commandCenter.timeline;
   const recommendationId = getRecommendationId(pilot);
   const isRecommendationComplete = recommendationHistory.some(item => item.recommendationId === recommendationId);
 
@@ -323,7 +325,7 @@ export default function Home() {
       </div>
     </section>
 
-    <section className="mt-6"><Card title="Pilot insights"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{pilotInsights.map(insight => <Insight key={insight.id} icon={insight.id === 'debt' ? <CreditCard/> : insight.id === 'goal' || insight.id === 'emergency' ? <Target/> : insight.id === 'bills' ? <CalendarDays/> : <WalletCards/>} title={insight.title} detail={insight.detail} tone={insight.tone}/>)}</div></Card></section>
+    <section className="mt-6"><Card title="Pilot insights"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{pilotInsights.map(insight => <Insight key={insight.id} icon={insight.id === 'debt' ? <CreditCard/> : insight.id === 'goal' || insight.id === 'emergency' ? <Target/> : insight.id === 'bills' ? <CalendarDays/> : <WalletCards/>} title={insight.title} detail={insight.summary} severity={insight.severity} action={insight.suggestedAction}/>)}</div></Card></section>
 
     {missingInformation.length > 0 && <section className="mt-6"><Card title="Missing information"><p className="-mt-2 mb-5 text-sm leading-6 text-slate-400">Complete these details to make your briefing and Pilot recommendation more precise.</p><div className="grid gap-3 md:grid-cols-2">{missingInformation.map(item => <Link key={item.label} href={item.href} className="group flex items-start gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 transition hover:border-amber-400/40"><ListChecks className="mt-0.5 shrink-0 text-amber-300" size={19}/><span className="min-w-0 flex-1"><span className="block font-medium text-slate-200">{item.label}</span><span className="mt-1 block text-sm leading-5 text-slate-500">{item.detail}</span></span><ArrowRight className="mt-1 shrink-0 text-slate-600 transition group-hover:translate-x-1 group-hover:text-amber-300" size={17}/></Link>)}</div></Card></section>}
 
@@ -361,13 +363,13 @@ export default function Home() {
         </div>
       </Card>
       <Card title="Financial Timeline">
-        {timeline.length ? <div className="space-y-6">{timeline.map(group => <section key={group.label}><h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-300">{group.label}</h3><div className="space-y-3">{group.items.map(item => <article key={item.id} className="flex min-w-0 items-start gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4"><div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-cyan-400/25 text-cyan-300"><Clock3 size={14}/></div><div className="min-w-0 flex-1"><div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between"><p className="font-medium">{item.label}</p>{item.amount !== undefined && <p className={`font-semibold ${item.amount >= 0 ? 'text-emerald-300' : 'text-slate-200'}`}>{item.amount >= 0 ? '+' : '−'}{money.format(Math.abs(item.amount))}</p>}</div><p className="mt-1 text-sm text-slate-500">{item.detail} · {new Date(item.date).toLocaleDateString()}</p></div></article>)}</div></section>)}</div> : <Empty text="Your timeline is ready for details. Add a paycheck, recurring bills, or a goal to see what is expected next."/>}
+        {timeline.length ? <div className="space-y-6">{timeline.map(group => <section key={group.label}><h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-300">{group.label}</h3><div className="space-y-3">{group.events.map(event => <article key={event.id} className="flex min-w-0 items-start gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4"><div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-cyan-400/25 text-cyan-300"><Clock3 size={14}/></div><div className="min-w-0 flex-1"><div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between"><p className="font-medium">{event.title}</p>{event.amount !== undefined && <p className={`font-semibold ${event.direction === 'inflow' ? 'text-emerald-300' : 'text-slate-200'}`}>{event.direction === 'inflow' ? '+' : event.direction === 'outflow' ? '−' : ''}{money.format(Math.abs(event.amount))}</p>}</div><p className="mt-1 text-sm text-slate-500">{event.summary} · {event.status} · {new Date(event.occurredAt).toLocaleDateString()}</p></div></article>)}</div></section>)}</div> : <Empty text="Your timeline is ready for details. Add a paycheck, recurring bills, or a goal to see what is expected next."/>}
       </Card>
     </section>
 
     <section className="mt-6 grid gap-6 xl:grid-cols-2">
       <Card title="Recent Wins"><div className="space-y-3">{briefing.recentWins.map(win => <div key={win} className="flex gap-3 rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4"><Trophy className="mt-0.5 shrink-0 text-emerald-300" size={18}/><p className="text-sm leading-6 text-slate-300">{win}</p></div>)}</div></Card>
-      <Card title="Recommendation History">{recommendationHistory.length ? <div className="space-y-3">{recommendationHistory.slice(0, 5).map(item => <div key={item.id} className="rounded-2xl border border-slate-800 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{item.title}</p><p className="mt-1 text-xs capitalize text-slate-500">{item.category} • {new Date(item.completedAt).toLocaleDateString()}</p></div><CheckCircle2 className="shrink-0 text-emerald-300" size={19}/></div>{item.estimatedBenefit > 0 && <p className="mt-3 text-sm font-semibold text-cyan-300">{money.format(item.estimatedBenefit)} estimated benefit</p>}</div>)}</div> : <Empty text={recommendationHistoryUnavailable ? 'Recommendation history is temporarily unavailable. You can still use the current Pilot recommendation and try again later.' : 'No completed recommendations yet. Mark the current Pilot recommendation complete to record your first win.'}/>}</Card>
+      <Card title="Recommendation History">{commandCenter.recommendationHistory.length ? <div className="space-y-3">{commandCenter.recommendationHistory.slice(0, 5).map(event => <div key={event.id} className="rounded-2xl border border-slate-800 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{event.title}</p><p className="mt-1 text-xs capitalize text-slate-500">{String(event.metadata?.category ?? 'recommendation')} • {new Date(event.occurredAt).toLocaleDateString()}</p></div><CheckCircle2 className="shrink-0 text-emerald-300" size={19}/></div>{event.amount !== undefined && <p className="mt-3 text-sm font-semibold text-cyan-300">{money.format(event.amount)} estimated benefit</p>}</div>)}</div> : <Empty text={recommendationHistoryUnavailable ? 'Recommendation history is temporarily unavailable. You can still use the current Pilot recommendation and try again later.' : 'No completed recommendations yet. Mark the current Pilot recommendation complete to record your first win.'}/>}</Card>
     </section>
 
     {topGoal && <section className="mt-6"><Card title="Highest-priority unfinished goal"><div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="flex items-center gap-2"><Target className="text-cyan-300"/><p className="text-xl font-semibold">{topGoal.name}</p></div><p className="mt-2 text-sm text-slate-400">Priority {topGoal.priority} • {money.format(topGoal.currentAmount)} of {money.format(topGoal.targetAmount)}</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full bg-cyan-400" style={{ width: `${Math.min(100, topGoal.currentAmount / Math.max(1, topGoal.targetAmount) * 100)}%` }}/></div></div><a href="/goals" className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300">Manage goals</a></div></Card></section>}
@@ -387,7 +389,7 @@ export default function Home() {
 }
 
 function Card({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) { return <div className={`rounded-3xl border border-slate-800 bg-slate-900 p-6 ${className}`}><h2 className="mb-5 text-2xl font-semibold">{title}</h2>{children}</div>; }
-function Insight({ icon, title, detail, tone }: { icon: React.ReactNode; title: string; detail: string; tone: 'positive' | 'neutral' | 'warning' }) { return <article className={`rounded-2xl border bg-slate-950/40 p-5 ${tone === 'warning' ? 'border-amber-400/25' : tone === 'positive' ? 'border-emerald-400/20' : 'border-slate-800'}`}><div className={tone === 'warning' ? 'text-amber-300' : tone === 'positive' ? 'text-emerald-300' : 'text-cyan-300'}>{icon}</div><h3 className="mt-4 text-lg font-semibold leading-6">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p></article>; }
+function Insight({ icon, title, detail, severity, action }: { icon: React.ReactNode; title: string; detail: string; severity: 'info' | 'positive' | 'warning' | 'critical'; action: { label: string; href: string } }) { const warning = severity === 'warning' || severity === 'critical'; return <article className={`rounded-2xl border bg-slate-950/40 p-5 ${warning ? 'border-amber-400/25' : severity === 'positive' ? 'border-emerald-400/20' : 'border-slate-800'}`}><div className={warning ? 'text-amber-300' : severity === 'positive' ? 'text-emerald-300' : 'text-cyan-300'}>{icon}</div><h3 className="mt-4 text-lg font-semibold leading-6">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p><Link href={action.href} className="mt-4 inline-flex text-sm font-medium text-cyan-300">{action.label}</Link></article>; }
 function Stat({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-medium">{value}</p></div>; }
 function Empty({ text }: { text: string }) { return <p className="rounded-xl border border-dashed border-slate-700 p-4 text-sm leading-6 text-slate-500">{text}</p>; }
 function HelpLabel({ label, help }: { label: string; help: string }) { return <span className="flex items-center gap-1.5"><span>{label}</span><span className="group relative inline-flex"><button type="button" aria-label={`About ${label}`} className="rounded-full text-slate-500 outline-none transition hover:text-cyan-300 focus-visible:text-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-300"><Info size={14}/></button><span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-950 p-3 text-left text-xs leading-5 text-slate-300 shadow-xl group-hover:block group-focus-within:block">{help}</span></span></span>; }

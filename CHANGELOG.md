@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.22.0 — Pilot Intelligence Platform
+
+- Added one shared event model for income, bills, debt, goals, health, recommendations, and purchase analyses.
+- Added complete deterministic Opportunity, Risk, Trend, Achievement, and Recommendation insight records.
+- Moved the Command Center timeline, briefing, insights, recommendation history, and Pilot Coach onto shared intelligence models.
+- Added the internal weekly brief foundation for wins, risks, completed recommendations, and health changes.
+
 ## 0.21.0 — Before You Buy
 
 - Added deterministic purchase decision intelligence for cash and financed purchases.

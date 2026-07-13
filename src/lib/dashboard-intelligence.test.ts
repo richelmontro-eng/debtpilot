@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getBriefingSummary, getDeterministicInsights, getGroupedTimeline, getMissingInformation, getSafeDashboardError } from './dashboard-intelligence';
+import { getBriefingSummary, getDeterministicInsights, getMissingInformation, getSafeDashboardError } from './dashboard-intelligence';
 import type { FinancialPulse, Recommendation } from './pilot';
 
 const pulse: FinancialPulse = { score: 72, label: 'Stable', explanation: [] };
@@ -23,13 +23,6 @@ describe('financial briefing intelligence', () => {
     const input = { checking: 100, checkingCushion: 500, safeExtra: 0, billsReserve: 900, payPerCheck: 800, debts: [{ id: 'd', name: 'Card', balance: 2000, apr: 24, minimum: 50 }], goals: [{ id: 'g', name: 'Emergency', goalType: 'emergency_fund', targetAmount: 1000, currentAmount: 250, priority: 1 }] };
     expect(getDeterministicInsights(input)).toEqual(getDeterministicInsights(input));
     expect(getDeterministicInsights(input).map(item => item.id)).toEqual(['cushion', 'bills', 'emergency', 'debt', 'goal']);
-  });
-
-  it('sorts and groups bills, paychecks, and goal events', () => {
-    const groups = getGroupedTimeline({ now: new Date('2026-07-12T12:00:00'), cycleDays: 7, payPerCheck: 1200, bills: [{ id: 'weekly', name: 'Groceries', amount: 100, dueDay: 12, frequency: 'weekly' }, { id: 'tomorrow', name: 'Phone', amount: 80, dueDay: 13, frequency: 'monthly' }], goals: [{ id: 'done', name: 'Starter fund', goalType: 'emergency_fund', targetAmount: 500, currentAmount: 500, priority: 1 }], recommendation });
-    expect(groups.map(group => group.label)).toEqual(['Today', 'Tomorrow', 'This Week']);
-    expect(groups.flatMap(group => group.items).map(item => item.label)).toEqual(expect.arrayContaining(['Groceries', 'Phone', 'Expected paycheck', 'Starter fund target reached']));
-    expect(groups.flatMap(group => group.items).every((item, index, all) => index === 0 || new Date(all[index - 1].date) <= new Date(item.date))).toBe(true);
   });
 
   it('suppresses technical error details', () => {

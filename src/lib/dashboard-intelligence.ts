@@ -6,18 +6,8 @@ export type DashboardGoal = { id: string; name: string; goalType: string; target
 
 export type MissingInformationItem = { id: string; label: string; detail: string; href: string };
 export type DeterministicInsight = { id: string; title: string; detail: string; tone: 'positive' | 'neutral' | 'warning' };
-export type TimelineItem = {
-  id: string;
-  label: string;
-  detail: string;
-  date: string;
-  amount?: number;
-  state: 'projected' | 'posted';
-  group: 'Today' | 'Tomorrow' | 'This Week' | 'Upcoming';
-};
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-const dayMs = 86400000;
 
 export function getBriefingSummary(input: {
   pulse: FinancialPulse;
@@ -96,66 +86,6 @@ export function getDeterministicInsights(input: {
       : { id: 'cash', title: 'No safe extra cash is available yet', detail: 'Pilot is keeping this pay cycle focused on recorded obligations and protections.', tone: 'neutral' });
   }
   return insights.slice(0, 5);
-}
-
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function addDays(date: Date, days: number) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
-}
-
-function nextMonthlyDue(now: Date, dueDay: number) {
-  const today = startOfDay(now);
-  const lastThisMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  let due = new Date(now.getFullYear(), now.getMonth(), Math.min(dueDay, lastThisMonth));
-  if (due < today) {
-    const lastNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0).getDate();
-    due = new Date(now.getFullYear(), now.getMonth() + 1, Math.min(dueDay, lastNextMonth));
-  }
-  return due;
-}
-
-function timelineGroup(now: Date, date: Date): TimelineItem['group'] {
-  const days = Math.round((startOfDay(date).getTime() - startOfDay(now).getTime()) / dayMs);
-  if (days <= 0) return 'Today';
-  if (days === 1) return 'Tomorrow';
-  if (days <= 7) return 'This Week';
-  return 'Upcoming';
-}
-
-export function getGroupedTimeline(input: {
-  now: Date;
-  cycleDays: number;
-  payPerCheck: number;
-  bills: DashboardBill[];
-  goals: DashboardGoal[];
-  recommendation: Recommendation;
-}) {
-  const items: TimelineItem[] = [];
-  for (const bill of input.bills) {
-    if (!bill.dueDay || bill.dueDay < 1 || bill.dueDay > 31) continue;
-    const date = bill.frequency === 'weekly' ? startOfDay(input.now) : nextMonthlyDue(input.now, bill.dueDay);
-    items.push({ id: `bill-${bill.id}`, label: bill.name, detail: 'Expected bill · projected', date: date.toISOString(), amount: -bill.amount, state: 'projected', group: timelineGroup(input.now, date) });
-  }
-  if (input.payPerCheck > 0) {
-    const date = addDays(input.now, input.cycleDays);
-    items.push({ id: 'paycheck', label: 'Expected paycheck', detail: 'Saved pay schedule · projected', date: date.toISOString(), amount: input.payPerCheck, state: 'projected', group: timelineGroup(input.now, date) });
-  }
-  for (const goal of input.goals.filter(goal => goal.targetAmount > 0 && goal.currentAmount >= goal.targetAmount)) {
-    const date = startOfDay(input.now);
-    items.push({ id: `goal-${goal.id}`, label: `${goal.name} target reached`, detail: 'Saved goal progress · posted', date: date.toISOString(), state: 'posted', group: 'Today' });
-  }
-  if (input.recommendation.category === 'goal' && input.recommendation.action.targetId && input.recommendation.action.amount > 0) {
-    const goal = input.goals.find(item => item.id === input.recommendation.action.targetId);
-    if (goal) {
-      const date = addDays(input.now, Math.min(7, input.cycleDays));
-      items.push({ id: 'goal-recommendation', label: `Planned contribution to ${goal.name}`, detail: 'Pilot recommendation · projected', date: date.toISOString(), amount: -input.recommendation.action.amount, state: 'projected', group: timelineGroup(input.now, date) });
-    }
-  }
-  const sorted = items.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.label.localeCompare(b.label));
-  return (['Today', 'Tomorrow', 'This Week', 'Upcoming'] as const).map(label => ({ label, items: sorted.filter(item => item.group === label) })).filter(group => group.items.length);
 }
 
 export function getSafeDashboardError() {

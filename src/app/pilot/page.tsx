@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Bot, CalendarClock, CheckCircle2, CircleDollarSign, ShieldAlert, Sparkles, Target, TrendingUp } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
+import { buildCommandCenter } from '@/lib/intelligence';
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 type Debt = { id: string; name: string; balance: number; apr: number; minimum: number };
@@ -11,15 +12,6 @@ type Bill = { id: string; name: string; amount: number; dueDay: number; frequenc
 type Goal = { id: string; name: string; goalType: string; target: number; current: number; priority: number };
 type Snapshot = { date: string; assets: number; debt: number; netWorth: number; health: number };
 type Profile = { display_name?: string | null; pay_frequency?: string | null; weekly_take_home?: number | string | null; checking_balance?: number | string | null; savings_balance?: number | string | null; checking_cushion?: number | string | null; weekly_living_reserve?: number | string | null; preferred_strategy?: string | null };
-
-type Focus = {
-  title: string;
-  amount?: number;
-  reason: string;
-  href: string;
-  action: string;
-  confidence: number;
-};
 
 const paySchedules: Record<PayFrequency, { periods: number; cycleDays: number; label: string }> = {
   weekly: { periods: 52, cycleDays: 7, label: 'weekly' },
@@ -94,9 +86,8 @@ export default function PilotPage() {
     const savings = Number(profile?.savings_balance ?? 0);
     const cushion = Number(profile?.checking_cushion ?? 0);
     const livingPerCheck = Number(profile?.weekly_living_reserve ?? 0);
-    const strategy = profile?.preferred_strategy === 'snowball' ? 'snowball' : 'avalanche';
+    const strategy: 'snowball' | 'avalanche' = profile?.preferred_strategy === 'snowball' ? 'snowball' : 'avalanche';
     const monthlyIncome = payPerCheck * schedule.periods / 12;
-    const totalDebt = debts.reduce((sum, debt) => sum + debt.balance, 0);
     const monthlyMinimums = debts.reduce((sum, debt) => sum + debt.minimum, 0);
     const minimumReserve = monthlyMinimums * 12 / schedule.periods;
     const dueSoon = bills
@@ -104,61 +95,20 @@ export default function PilotPage() {
       .sort((a, b) => daysUntilDue(a.dueDay) - daysUntilDue(b.dueDay));
     const billReserve = dueSoon.reduce((sum, bill) => sum + bill.amount, 0);
     const cushionShortfall = Math.max(0, cushion - checking);
-    const safeExtra = Math.max(0, payPerCheck - livingPerCheck - minimumReserve - billReserve - cushionShortfall);
-    const unfinishedGoals = goals.filter(goal => goal.current < goal.target).sort((a, b) => a.priority - b.priority || (a.target - a.current) - (b.target - b.current));
-    const emergency = unfinishedGoals.find(goal => goal.goalType === 'emergency_fund');
-    const rankedDebts = [...debts].filter(debt => debt.balance > 0).sort((a, b) => strategy === 'snowball' ? a.balance - b.balance || b.apr - a.apr : b.apr - a.apr || a.balance - b.balance);
-    const debtTarget = rankedDebts[0];
-    const topGoal = unfinishedGoals[0];
-
-    let focus: Focus;
-    if (cushionShortfall > 0) {
-      focus = {
-        title: 'Restore your checking cushion',
-        amount: Math.min(payPerCheck, cushionShortfall),
-        reason: `Your available checking balance is ${money.format(cushionShortfall)} below the protected minimum you selected.`,
-        href: '/',
-        action: 'Review paycheck plan',
-        confidence: 98,
-      };
-    } else if (emergency && emergency.priority === 1 && emergency.current < Math.min(1000, emergency.target) && safeExtra > 0) {
-      focus = {
-        title: `Build ${emergency.name}`,
-        amount: Math.min(safeExtra, Math.min(1000, emergency.target) - emergency.current),
-        reason: 'A high-priority starter emergency reserve reduces the chance that an unexpected expense returns to a credit card.',
-        href: '/goals',
-        action: 'Open goals',
-        confidence: 95,
-      };
-    } else if (debtTarget && safeExtra > 0) {
-      focus = {
-        title: `Pay extra toward ${debtTarget.name}`,
-        amount: safeExtra,
-        reason: strategy === 'snowball'
-          ? `${debtTarget.name} has the smallest remaining balance under your snowball strategy.`
-          : `${debtTarget.name} has the highest APR at ${debtTarget.apr.toFixed(2)}% under your avalanche strategy.`,
-        href: '/payoff',
-        action: 'Open payoff planner',
-        confidence: dueSoon.length ? 94 : 90,
-      };
-    } else if (topGoal && safeExtra > 0) {
-      focus = {
-        title: `Contribute to ${topGoal.name}`,
-        amount: Math.min(safeExtra, topGoal.target - topGoal.current),
-        reason: 'Required bills, living money, minimum payments, and your checking cushion are already protected.',
-        href: '/goals',
-        action: 'Open goals',
-        confidence: 88,
-      };
-    } else {
-      focus = {
-        title: 'Protect cash and review the next cycle',
-        reason: 'No safe extra amount is currently available after the obligations and protections in your saved plan.',
-        href: '/forecast',
-        action: 'Review cash flow',
-        confidence: 96,
-      };
-    }
+    const availableBeforeCushion = Math.max(0, payPerCheck - livingPerCheck - minimumReserve - billReserve);
+    const safeExtra = Math.max(0, availableBeforeCushion - cushionShortfall);
+    const goalModels = goals.map(goal => ({ id: goal.id, name: goal.name, goalType: goal.goalType, targetAmount: goal.target, currentAmount: goal.current, priority: goal.priority }));
+    const financialState = { availableBeforeCushion, cushionGap: cushionShortfall, safeExtra, monthlyIncome, payPerCheck, monthlyMinimums, checking, checkingCushion: cushion, strategy, debts, goals: goalModels, billsDueSoon: dueSoon.map(bill => ({ ...bill, dueInDays: bill.frequency === 'weekly' ? 0 : daysUntilDue(bill.dueDay) })) };
+    const commandCenter = buildCommandCenter({ now: new Date(), cycleDays: schedule.cycleDays, financialState, checking, checkingCushion: cushion, billsReserve: billReserve, debts, bills, goals: goalModels, recommendationHistory: [], snapshots: snapshots.map(item => ({ date: item.date, health: item.health, netWorth: item.netWorth, debt: item.debt })) });
+    const recommendation = commandCenter.pilot.recommendation;
+    const focus = {
+      title: recommendation.title,
+      amount: recommendation.action.amount || undefined,
+      reason: recommendation.description,
+      href: recommendation.category === 'goal' ? '/goals' : recommendation.category === 'debt' ? '/payoff' : recommendation.category === 'cushion' ? '/' : '/forecast',
+      action: recommendation.category === 'goal' ? 'Open goals' : recommendation.category === 'debt' ? 'Open payoff planner' : recommendation.category === 'cushion' ? 'Review paycheck plan' : 'Review cash flow',
+      confidence: recommendation.confidence,
+    };
 
     const latest = snapshots.at(-1);
     const previous = snapshots.length > 1 ? snapshots.at(-2) : undefined;
@@ -178,7 +128,7 @@ export default function PilotPage() {
     const monthlySurplus = monthlyIncome - monthlyBills - monthlyMinimums - monthlyLiving;
     const emergencyMonths = (checking + savings) / Math.max(1, monthlyBills + monthlyMinimums + monthlyLiving);
 
-    return { schedule, checking, cushion, totalDebt, dueSoon, billReserve, safeExtra, focus, changes, monthlySurplus, emergencyMonths, topGoal, monthlyIncome };
+    return { schedule, dueSoon, billReserve, safeExtra, focus, changes, monthlySurplus, emergencyMonths, insights: commandCenter.insights };
   }, [profile, debts, bills, goals, snapshots]);
 
   if (loading) return <main className="grid min-h-screen place-items-center bg-slate-950 text-slate-100">Pilot is reviewing your finances…</main>;
@@ -236,11 +186,7 @@ export default function PilotPage() {
       <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
         <h2 className="text-2xl font-semibold">Pilot observations</h2>
         <div className="mt-5 space-y-4">
-          <ReviewLine positive={review.checking >= review.cushion} text={review.checking >= review.cushion ? 'Your protected checking cushion is funded.' : `Checking is ${money.format(review.cushion - review.checking)} below your protected cushion.`}/>
-          <ReviewLine positive={review.monthlySurplus >= 0} text={review.monthlySurplus >= 0 ? `Your saved plan leaves an estimated ${money.format(review.monthlySurplus)} monthly surplus.` : `Your current saved plan is short by approximately ${money.format(Math.abs(review.monthlySurplus))} per month.`}/>
-          <ReviewLine positive={review.emergencyMonths >= 1} text={`Checking plus savings cover approximately ${review.emergencyMonths.toFixed(1)} months of modeled expenses.`}/>
-          <ReviewLine positive={review.totalDebt === 0} text={review.totalDebt === 0 ? 'No outstanding debt balances are saved.' : `Your saved debt balances total ${money.format(review.totalDebt)}.`}/>
-          {review.topGoal && <ReviewLine positive={false} text={`${money.format(review.topGoal.target - review.topGoal.current)} remains on your highest-priority unfinished goal: ${review.topGoal.name}.`}/>} 
+          {review.insights.map(insight => <ReviewLine key={insight.id} positive={insight.severity === 'positive'} text={`${insight.title}. ${insight.summary}`}/>)}
         </div>
       </div>
     </section>
