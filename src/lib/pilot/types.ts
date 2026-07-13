@@ -9,11 +9,11 @@ export type PilotDebt = {
   apr: number;
   minimum?: number;
   promotionType?: 'none' | 'zero_percent' | 'deferred_interest';
-  promotionalApr?: number;
+  promotionalApr?: number | null;
   promotionEndDate?: string | null;
-  postPromotionApr?: number;
-  originalPromotionalBalance?: number;
-  estimatedDeferredInterest?: number;
+  postPromotionApr?: number | null;
+  originalPromotionalBalance?: number | null;
+  estimatedDeferredInterest?: number | null;
 };
 
 export type PilotGoal = {

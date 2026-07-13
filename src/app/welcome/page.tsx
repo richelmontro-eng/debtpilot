@@ -7,9 +7,11 @@ import InfoTooltip from '@/components/info-tooltip';
 import { createClient } from '@/lib/supabase';
 import { getResumeStep, getWelcomeAction } from '@/lib/onboarding';
 import { saveOnboardingBills, validateOnboardingBill, type BillStore } from '@/lib/onboarding-bills';
+import { mapDebtRow, saveDebts, type DebtStore, type PersistedDebt } from '@/lib/debt-persistence';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
-type DebtDraft = { id: string; name: string; balance: number; apr: number; minimum: number; promotionType: 'none' | 'zero_percent' | 'deferred_interest'; promotionalApr: number; promotionEndDate: string; postPromotionApr: number; originalPromotionalBalance: number; estimatedDeferredInterest: number };
+type DebtDraft = PersistedDebt;
 type BillDraft = { id: string; name: string; amount: number; dueDay: number; frequency: string };
 type GoalDraft = { id: string; name: string; goalType: string; targetAmount: number; currentAmount: number; priority: number };
 type Draft = { displayName: string; payFrequency: PayFrequency; netPay: number; checking: number; savings: number; cushion: number; debts: DebtDraft[]; bills: BillDraft[]; goals: GoalDraft[] };
@@ -23,6 +25,35 @@ const stepExplanations = [
   'Recurring bills determine what must be set aside before your next paycheck, keeping recommendations grounded in upcoming cash needs.',
   'Goals tell DebtPilot what you are building toward and which priority should receive safe extra cash after essentials are covered.',
 ];
+
+function logOnboardingOperation(context: string, error: { code?: string; message?: string; details?: string; hint?: string }) {
+  if (process.env.NODE_ENV !== 'production') console.error('[DebtPilot onboarding]', { context, code: error.code, message: error.message, details: error.details, hint: error.hint });
+}
+
+function createOnboardingBillStore(supabase: SupabaseClient, userId: string): BillStore {
+  return {
+    async upsert(bill) {
+      const { error } = await supabase.from('bills').upsert({ id: bill.id, user_id: userId, name: bill.name, amount: bill.amount, due_day: bill.dueDay, frequency: bill.frequency }, { onConflict: 'id' });
+      return { error };
+    },
+    async reload() {
+      const { data, error } = await supabase.from('bills').select('id,name,amount,due_day,frequency').eq('user_id', userId).order('due_day');
+      return { bills: (data ?? []).map(row => ({ id: row.id, name: row.name, amount: Number(row.amount), dueDay: Number(row.due_day), frequency: row.frequency })), error };
+    },
+    async remove(ids) {
+      const { error } = await supabase.from('bills').delete().eq('user_id', userId).in('id', ids);
+      return { error };
+    },
+  };
+}
+
+function createOnboardingDebtStore(supabase: SupabaseClient, userId: string): DebtStore {
+  return {
+    async upsert(payload) { const { error } = await supabase.from('debts').upsert(payload, { onConflict: 'id' }); return { error }; },
+    async reload() { const { data, error } = await supabase.from('debts').select('*').eq('user_id', userId).order('created_at'); return { rows: data ?? [], error }; },
+    async remove(ids) { const { error } = await supabase.from('debts').delete().eq('user_id', userId).in('id', ids); return { error }; },
+  };
+}
 
 export default function WelcomePage() {
   const router = useRouter();
@@ -42,8 +73,17 @@ export default function WelcomePage() {
     void (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.replace('/login'); return; }
-      const { data, error } = await supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
-      if (error) setMessage(`Could not load setup: ${error.message}`);
+      const [{ data, error }, { data: savedBills, error: billReloadError }, { data: savedDebts, error: debtReloadError }] = await Promise.all([
+        supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle(),
+        supabase.from('bills').select('id,name,amount,due_day,frequency').eq('user_id', user.id).order('due_day'),
+        supabase.from('debts').select('*').eq('user_id', user.id).order('created_at'),
+      ]);
+      if (error || billReloadError || debtReloadError) {
+        if (error) logOnboardingOperation('load onboarding profile', error);
+        if (billReloadError) logOnboardingOperation('reload saved bills on onboarding entry', billReloadError);
+        if (debtReloadError) logOnboardingOperation('reload saved debts on onboarding entry', debtReloadError);
+        setMessage("We couldn't refresh every part of setup. Your entries are still available; please try again.");
+      }
       if (data?.onboarding_completed) { router.replace('/'); return; }
       setUserId(user.id);
       setSavedStep(Number(data?.onboarding_step ?? 0));
@@ -58,7 +98,8 @@ export default function WelcomePage() {
         checking: Number(stored?.checking ?? data?.checking_balance ?? 0),
         savings: Number(stored?.savings ?? data?.savings_balance ?? 0),
         cushion: Number(stored?.cushion ?? data?.checking_cushion ?? 0),
-        debts: (stored?.debts ?? []).map(debt => ({ ...debt, promotionType: debt.promotionType ?? 'none', promotionalApr: debt.promotionalApr ?? 0, promotionEndDate: debt.promotionEndDate ?? '', postPromotionApr: debt.postPromotionApr ?? debt.apr ?? 0, originalPromotionalBalance: debt.originalPromotionalBalance ?? debt.balance ?? 0, estimatedDeferredInterest: debt.estimatedDeferredInterest ?? 0 })),
+        debts: (savedDebts ?? []).length ? (savedDebts ?? []).map(mapDebtRow) : (stored?.debts ?? []).map(debt => ({ ...debt, promotionType: debt.promotionType ?? 'none', promotionalApr: debt.promotionalApr ?? null, promotionEndDate: debt.promotionEndDate ?? '', postPromotionApr: debt.postPromotionApr ?? null, originalPromotionalBalance: debt.originalPromotionalBalance ?? null, estimatedDeferredInterest: debt.estimatedDeferredInterest ?? null })),
+        bills: (savedBills ?? []).length ? (savedBills ?? []).map(bill => ({ id: bill.id, name: bill.name, amount: Number(bill.amount), dueDay: Number(bill.due_day), frequency: bill.frequency })) : (stored?.bills ?? []),
       });
       setLoading(false);
     })();
@@ -75,14 +116,23 @@ export default function WelcomePage() {
       if (invalidBill) { setSaving(false); setMessage(invalidBill); return; }
     }
     const nextStep = Math.min(5, step + 1);
+    let draftToSave = draft;
+    if (step === 4) {
+      const billResult = await saveOnboardingBills(createOnboardingBillStore(supabase, userId), draft.bills);
+      if (!billResult.ok) { setSaving(false); setMessage(billResult.message); return; }
+      const refreshedBills = billResult.bills.length || draft.bills.length === 0 ? billResult.bills : draft.bills;
+      draftToSave = { ...draft, bills: refreshedBills };
+      setDraft(draftToSave);
+      if (billResult.warning && process.env.NODE_ENV !== 'production') console.warn('[DebtPilot onboarding]', { context: 'Bills step post-write maintenance', warning: billResult.warning });
+    }
     const { error } = await supabase.from('profiles').upsert({
       user_id: userId,
       display_name: draft.displayName.trim(), pay_frequency: draft.payFrequency, weekly_take_home: Math.max(0, draft.netPay),
       checking_balance: draft.checking, savings_balance: draft.savings, checking_cushion: Math.max(0, draft.cushion),
-      onboarding_step: nextStep, onboarding_data: draft, updated_at: new Date().toISOString(),
+      onboarding_step: nextStep, onboarding_data: draftToSave, updated_at: new Date().toISOString(),
     });
     setSaving(false);
-    if (error) { setMessage(`Could not save setup: ${error.message}`); return; }
+    if (error) { logOnboardingOperation('update onboarding_data and onboarding_step', error); setMessage(step === 4 ? "Your bills were saved, but we couldn't update your onboarding progress. Please try Continue again." : "We couldn't update your onboarding progress. Your entries are still here; please try again."); return; }
     setSavedStep(nextStep);
     if (step === 5) setShowFinish(true); else setStep(nextStep);
   }
@@ -91,36 +141,31 @@ export default function WelcomePage() {
     const supabase = createClient();
     if (!supabase || !userId || saving) return;
     setSaving(true); setMessage('');
-    const billStore: BillStore = {
-      async upsert(bill) {
-        const { error } = await supabase.from('bills').upsert({ id: bill.id, user_id: userId, name: bill.name, amount: bill.amount, due_day: bill.dueDay, frequency: bill.frequency }, { onConflict: 'id' });
-        return { error };
-      },
-      async listIds() {
-        const { data, error } = await supabase.from('bills').select('id').eq('user_id', userId);
-        return { ids: (data ?? []).map(row => row.id), error };
-      },
-      async remove(ids) {
-        const { error } = await supabase.from('bills').delete().eq('user_id', userId).in('id', ids);
-        return { error };
-      },
-    };
-    const billResult = await saveOnboardingBills(billStore, draft.bills);
+    const billResult = await saveOnboardingBills(createOnboardingBillStore(supabase, userId), draft.bills);
     if (!billResult.ok) { setSaving(false); setMessage(billResult.message); return; }
-    const results = await Promise.all([
-      supabase.from('debts').delete().eq('user_id', userId),
-      supabase.from('goals').delete().eq('user_id', userId),
-    ]);
-    let error = results.find(result => result.error)?.error ?? null;
-    if (!error && draft.debts.length) ({ error } = await supabase.from('debts').insert(draft.debts.map(debt => ({ user_id: userId, name: debt.name, balance: Math.max(0, debt.balance), apr: Math.max(0, debt.apr), minimum_payment: Math.max(0, debt.minimum), promotion_type: debt.promotionType, promotional_apr: Math.max(0, debt.promotionalApr), promotion_end_date: debt.promotionEndDate || null, post_promotion_apr: Math.max(0, debt.postPromotionApr), original_promotional_balance: Math.max(0, debt.originalPromotionalBalance), estimated_deferred_interest: Math.max(0, debt.estimatedDeferredInterest) }))));
+    const refreshedBills = billResult.bills.length || draft.bills.length === 0 ? billResult.bills : draft.bills;
+    setDraft(current => ({ ...current, bills: refreshedBills }));
+    if (billResult.warning && process.env.NODE_ENV !== 'production') console.warn('[DebtPilot onboarding]', { context: 'post-write bill maintenance', warning: billResult.warning });
+    const debtResult = await saveDebts(createOnboardingDebtStore(supabase, userId), userId, draft.debts);
+    if (!debtResult.ok) { setSaving(false); setMessage(debtResult.message); return; }
+    const refreshedDebts = debtResult.debts;
+    setDraft(current => ({ ...current, debts: refreshedDebts, bills: refreshedBills }));
+    if (debtResult.warning && process.env.NODE_ENV !== 'production') console.warn('[DebtPilot onboarding]', { context: 'post-write debt maintenance', warning: debtResult.warning });
+    const { error: goalResetError } = await supabase.from('goals').delete().eq('user_id', userId);
+    let error = goalResetError;
+    if (error) logOnboardingOperation('reset goals after debts and bills saved', error);
     if (!error && draft.goals.length) ({ error } = await supabase.from('goals').insert(draft.goals.map(goal => ({ user_id: userId, name: goal.name, goal_type: goal.goalType, target_amount: Math.max(0, goal.targetAmount), current_amount: Math.max(0, goal.currentAmount), priority: goal.priority }))));
-    if (!error) ({ error } = await supabase.from('profiles').update({ onboarding_completed: true, onboarding_step: 5, updated_at: new Date().toISOString() }).eq('user_id', userId));
+    if (!error) {
+      const profileResult = await supabase.from('profiles').update({ onboarding_completed: true, onboarding_step: 5, onboarding_data: { ...draft, debts: refreshedDebts, bills: refreshedBills }, updated_at: new Date().toISOString() }).eq('user_id', userId);
+      error = profileResult.error;
+      if (error) logOnboardingOperation('update completed profile, onboarding_data, and onboarding_step', error);
+    }
     setSaving(false);
     if (error) {
-      if (process.env.NODE_ENV !== 'production') console.error('[DebtPilot onboarding finish]', { code: error.code, message: error.message, details: error.details, hint: error.hint });
-      setMessage('We could not finish setup. Your bills are saved; please try again.');
+      setMessage("Your bills were saved, but we couldn't update your onboarding progress. Please try again.");
       return;
     }
+    if (process.env.NODE_ENV !== 'production') console.info('[DebtPilot onboarding]', { context: 'bill reload and onboarding updates complete; navigating to dashboard' });
     router.replace('/'); router.refresh();
   }
 
@@ -141,6 +186,6 @@ function StepContent({ step, draft, update }: { step: number; draft: Draft; upda
 
 function Collection({ title, onAdd, children }: { title: string; onAdd: () => void; children: React.ReactNode }) { return <div><div className="flex items-center justify-between"><h2 className="text-2xl font-semibold">{title}</h2><button onClick={onAdd} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 px-3 py-2 text-sm text-cyan-300"><Plus size={16}/>Add</button></div><div className="mt-5 space-y-3">{children}</div></div>; }
 function Text({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="text-xs text-slate-400">{label}<input className="field mt-1 w-full" value={value} onChange={e => onChange(e.target.value)}/></label>; }
-function NumberField({ label, value, onChange }: { label: React.ReactNode; value: number; onChange: (value: number) => void }) { return <label className="text-xs text-slate-400">{label}<input type="number" min="0" className="field mt-1 w-full" value={value} onChange={e => onChange(Number(e.target.value))}/></label>; }
+function NumberField<T extends number | null>({ label, value, onChange }: { label: React.ReactNode; value: T; onChange: (value: T) => void }) { const optional = typeof label === 'string' && ['Promotional APR %', 'Post-promotion APR %', 'Original promotional balance', 'Estimated deferred interest'].includes(label); return <label className="text-xs text-slate-400">{label}<input type="number" min="0" className="field mt-1 w-full" value={value ?? ''} onChange={e => onChange((optional && e.target.value === '' ? null : Number(e.target.value)) as T)}/></label>; }
 function Remove({ onClick }: { onClick: () => void }) { return <button aria-label="Remove" onClick={onClick} className="self-end rounded-xl border border-rose-400/20 p-3 text-rose-300"><Trash2 size={17}/></button>; }
 function WelcomePromotionFields({ item, updateItem }: { item: DebtDraft; updateItem: (changes: Partial<DebtDraft>) => void }) { return <div className="mt-4 border-t border-slate-800 pt-4"><label className="text-xs text-slate-400"><InfoTooltip label="Promotion type">Choose the lender offer that applies so DebtPilot can use the current rate and protect the payoff deadline.</InfoTooltip><select className="field mt-1 w-full" value={item.promotionType} onChange={event => updateItem({ promotionType: event.target.value as DebtDraft['promotionType'] })}><option value="none">None</option><option value="zero_percent">0% promotional APR</option><option value="deferred_interest">Deferred interest</option></select></label>{item.promotionType !== 'none' && <><p className="mt-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-xs leading-5 text-slate-400">{item.promotionType === 'zero_percent' ? 'No interest accrues during the promotional period. After it ends, the regular APR applies to any remaining balance.' : 'No interest is charged if the promotional balance is paid in full before the deadline. If it is not, the lender may charge interest dating back to the original purchase.'}</p><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><NumberField label="Promotional APR %" value={item.promotionalApr} onChange={promotionalApr => updateItem({ promotionalApr })}/><label className="text-xs text-slate-400">Promotion end date<input type="date" className="field mt-1 w-full" value={item.promotionEndDate} onChange={event => updateItem({ promotionEndDate: event.target.value })}/></label><NumberField label="Post-promotion APR %" value={item.postPromotionApr} onChange={postPromotionApr => updateItem({ postPromotionApr })}/><NumberField label="Original promotional balance" value={item.originalPromotionalBalance} onChange={originalPromotionalBalance => updateItem({ originalPromotionalBalance })}/>{item.promotionType === 'deferred_interest' && <NumberField label="Estimated deferred interest" value={item.estimatedDeferredInterest} onChange={estimatedDeferredInterest => updateItem({ estimatedDeferredInterest })}/>}</div></>}</div>; }

@@ -4,11 +4,11 @@ export type PromotionDebt = {
   apr: number;
   minimum?: number;
   promotionType?: PromotionType;
-  promotionalApr?: number;
+  promotionalApr?: number | null;
   promotionEndDate?: string | null;
-  postPromotionApr?: number;
-  originalPromotionalBalance?: number;
-  estimatedDeferredInterest?: number;
+  postPromotionApr?: number | null;
+  originalPromotionalBalance?: number | null;
+  estimatedDeferredInterest?: number | null;
 };
 
 export type PromotionStatus = 'on_track' | 'needs_higher_payment' | 'at_risk' | 'expired' | 'none';

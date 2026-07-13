@@ -3,7 +3,7 @@ import { saveOnboardingBills, type BillSaveError, type BillStore, type Onboardin
 
 const bill = (overrides: Partial<OnboardingBill> = {}): OnboardingBill => ({ id: '11111111-1111-4111-8111-111111111111', name: 'Electric Bill', amount: 120, dueDay: 15, frequency: 'monthly', ...overrides });
 
-function memoryStore(options: { failId?: string; error?: BillSaveError; initial?: OnboardingBill[] } = {}) {
+function memoryStore(options: { failId?: string; error?: BillSaveError; initial?: OnboardingBill[]; failReload?: boolean; failRemove?: boolean } = {}) {
   const rows = new Map((options.initial ?? []).map(item => [item.id, item]));
   const store: BillStore = {
     async upsert(item) {
@@ -11,8 +11,8 @@ function memoryStore(options: { failId?: string; error?: BillSaveError; initial?
       rows.set(item.id, item);
       return { error: null };
     },
-    async listIds() { return { ids: [...rows.keys()], error: null }; },
-    async remove(ids) { ids.forEach(id => rows.delete(id)); return { error: null }; },
+    async reload() { return options.failReload ? { bills: [], error: { code: 'reload', message: 'reload failed' } } : { bills: [...rows.values()], error: null }; },
+    async remove(ids) { if (options.failRemove) return { error: { code: 'cleanup', message: 'cleanup failed' } }; ids.forEach(id => rows.delete(id)); return { error: null }; },
   };
   return { store, rows };
 }
@@ -57,5 +57,22 @@ describe('reliable onboarding bill saves', () => {
     await saveOnboardingBills(store, [bill({ amount: 140 })]);
     expect(rows.size).toBe(1);
     expect(rows.get(bill().id)?.amount).toBe(140);
+  });
+
+  it('does not convert a post-write reload failure into a bill-save failure', async () => {
+    const { store, rows } = memoryStore({ failReload: true });
+    const result = await saveOnboardingBills(store, [bill()]);
+    expect(result.ok).toBe(true);
+    expect(result.warning).toContain('refreshed list');
+    expect(rows.size).toBe(1);
+  });
+
+  it('does not retry saved bills when duplicate cleanup fails', async () => {
+    const old = bill({ id: '33333333-3333-4333-8333-333333333333', name: 'Old Bill' });
+    const { store, rows } = memoryStore({ initial: [old], failRemove: true });
+    const result = await saveOnboardingBills(store, [bill()]);
+    expect(result.ok).toBe(true);
+    expect(result.warning).toContain('older bill');
+    expect(rows.has(bill().id)).toBe(true);
   });
 });

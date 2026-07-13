@@ -5,9 +5,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Bot, CalendarClock, CheckCircle2, CircleDollarSign, ShieldAlert, Sparkles, Target, TrendingUp } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { buildCommandCenter } from '@/lib/intelligence';
+import { mapDebtRow, type PersistedDebt } from '@/lib/debt-persistence';
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
-type Debt = { id: string; name: string; balance: number; apr: number; minimum: number; promotionType: 'none' | 'zero_percent' | 'deferred_interest'; promotionalApr: number; promotionEndDate: string | null; postPromotionApr: number; originalPromotionalBalance: number; estimatedDeferredInterest: number };
+type Debt = PersistedDebt;
 type Bill = { id: string; name: string; amount: number; dueDay: number; frequency: string };
 type Goal = { id: string; name: string; goalType: string; target: number; current: number; priority: number };
 type Snapshot = { date: string; assets: number; debt: number; netWorth: number; health: number };
@@ -69,7 +70,7 @@ export default function PilotPage() {
       const error = pe || de || be || ge || se;
       if (error) setMessage(`Load failed: ${error.message}`);
       setProfile(p);
-      setDebts((d ?? []).map(row => ({ id: row.id, name: row.name, balance: Number(row.balance), apr: Number(row.apr), minimum: Number(row.minimum_payment), promotionType: row.promotion_type ?? 'none', promotionalApr: Number(row.promotional_apr ?? 0), promotionEndDate: row.promotion_end_date, postPromotionApr: Number(row.post_promotion_apr ?? row.apr), originalPromotionalBalance: Number(row.original_promotional_balance ?? row.balance), estimatedDeferredInterest: Number(row.estimated_deferred_interest ?? 0) })));
+      setDebts((d ?? []).map(mapDebtRow));
       setBills((b ?? []).map(row => ({ id: row.id, name: row.name, amount: Number(row.amount), dueDay: Number(row.due_day ?? 1), frequency: row.frequency ?? 'monthly' })));
       setGoals((g ?? []).map(row => ({ id: row.id, name: row.name, goalType: row.goal_type, target: Number(row.target_amount), current: Number(row.current_amount), priority: Number(row.priority) })));
       setSnapshots((s ?? []).map(row => ({ date: row.snapshot_date, assets: Number(row.total_assets), debt: Number(row.total_debt), netWorth: Number(row.net_worth), health: Number(row.financial_health) })));

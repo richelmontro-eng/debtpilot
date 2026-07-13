@@ -22,7 +22,7 @@ create table if not exists public.debts (
   apr numeric(7,3) not null default 0 check (apr >= 0),
   minimum_payment numeric(12,2) not null default 0 check (minimum_payment >= 0),
   promotion_type text not null default 'none' check (promotion_type in ('none', 'zero_percent', 'deferred_interest')),
-  promotional_apr numeric(7,3) not null default 0 check (promotional_apr >= 0),
+  promotional_apr numeric(7,3) check (promotional_apr is null or promotional_apr >= 0),
   promotion_end_date date,
   post_promotion_apr numeric(7,3) check (post_promotion_apr is null or post_promotion_apr >= 0),
   original_promotional_balance numeric(12,2) check (original_promotional_balance is null or original_promotional_balance >= 0),

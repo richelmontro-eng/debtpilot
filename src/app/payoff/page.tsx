@@ -6,6 +6,7 @@ import { ArrowLeft, CalendarClock, CircleDollarSign, TrendingDown } from 'lucide
 import { createClient } from '@/lib/supabase';
 import { PayoffDebt, simulatePayoff } from '@/lib/payoff';
 import { analyzePromotion, promotionStatusLabel } from '@/lib/promotions';
+import { mapDebtRow } from '@/lib/debt-persistence';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
@@ -38,14 +39,7 @@ export default function PayoffPage() {
 
       if (error) setMessage(`Load failed: ${error.message}`);
       setStrategy(profile?.preferred_strategy === 'snowball' ? 'snowball' : 'avalanche');
-      setDebts((debtRows ?? []).map(row => ({
-        id: row.id,
-        name: row.name,
-        balance: Number(row.balance),
-        apr: Number(row.apr),
-        minimum: Number(row.minimum_payment),
-        promotionType: row.promotion_type ?? 'none', promotionalApr: Number(row.promotional_apr ?? 0), promotionEndDate: row.promotion_end_date, postPromotionApr: Number(row.post_promotion_apr ?? row.apr), originalPromotionalBalance: Number(row.original_promotional_balance ?? row.balance), estimatedDeferredInterest: Number(row.estimated_deferred_interest ?? 0),
-      })));
+      setDebts((debtRows ?? []).map(mapDebtRow));
       setLoading(false);
     })();
   }, []);

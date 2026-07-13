@@ -13,7 +13,7 @@ export type BillSaveError = { code?: string; message?: string; details?: string;
 
 export type BillStore = {
   upsert: (bill: OnboardingBill) => Promise<{ error: BillSaveError | null }>;
-  listIds: () => Promise<{ ids: string[]; error: BillSaveError | null }>;
+  reload: () => Promise<{ bills: OnboardingBill[]; error: BillSaveError | null }>;
   remove: (ids: string[]) => Promise<{ error: BillSaveError | null }>;
 };
 
@@ -21,6 +21,8 @@ export type BillSaveResult = {
   ok: boolean;
   savedIds: string[];
   message: string;
+  bills: OnboardingBill[];
+  warning?: string;
   failedBill?: OnboardingBill;
   error?: BillSaveError;
 };
@@ -61,7 +63,7 @@ export function getSafeBillSaveMessage(bill: OnboardingBill, error: BillSaveErro
 export async function saveOnboardingBills(store: BillStore, bills: OnboardingBill[]): Promise<BillSaveResult> {
   for (const bill of bills) {
     const validation = validateOnboardingBill(bill);
-    if (validation) return { ok: false, savedIds: [], message: validation, failedBill: bill };
+    if (validation) return { ok: false, savedIds: [], bills: [], message: validation, failedBill: bill };
   }
 
   const savedIds: string[] = [];
@@ -69,23 +71,28 @@ export async function saveOnboardingBills(store: BillStore, bills: OnboardingBil
     const { error } = await store.upsert({ ...bill, name: bill.name.trim() });
     if (error) {
       logBillSaveError('upsert', error, bill);
-      return { ok: false, savedIds, message: getSafeBillSaveMessage(bill, error), failedBill: bill, error };
+      return { ok: false, savedIds, bills: [], message: getSafeBillSaveMessage(bill, error), failedBill: bill, error };
     }
     savedIds.push(bill.id);
   }
 
-  const listed = await store.listIds();
-  if (listed.error) {
-    logBillSaveError('select existing bill ids', listed.error);
-    return { ok: false, savedIds, message: 'Your bills were saved, but cleanup could not finish. Please try again.', error: listed.error };
+  const reloaded = await store.reload();
+  if (reloaded.error) {
+    logBillSaveError('reload bills after successful writes', reloaded.error);
+    return { ok: true, savedIds, bills, message: 'Bills saved.', warning: 'Your bills were saved, but the refreshed list is temporarily unavailable.' };
   }
-  const removedIds = listed.ids.filter(id => !savedIds.includes(id));
+  const removedIds = reloaded.bills.map(bill => bill.id).filter(id => !savedIds.includes(id));
   if (removedIds.length) {
     const removed = await store.remove(removedIds);
     if (removed.error) {
       logBillSaveError('remove deleted onboarding bills', removed.error);
-      return { ok: false, savedIds, message: 'Your bills were saved, but an older bill could not be removed. Please try again.', error: removed.error };
+      return { ok: true, savedIds, bills: reloaded.bills, message: 'Bills saved.', warning: 'Your bills were saved, but an older bill could not be removed.' };
     }
   }
-  return { ok: true, savedIds, message: bills.length ? 'Bills saved.' : 'No bills to save.' };
+  const finalReload = removedIds.length ? await store.reload() : reloaded;
+  if (finalReload.error) {
+    logBillSaveError('reload bills after duplicate cleanup', finalReload.error);
+    return { ok: true, savedIds, bills, message: 'Bills saved.', warning: 'Your bills were saved, but the refreshed list is temporarily unavailable.' };
+  }
+  return { ok: true, savedIds, bills: finalReload.bills, message: bills.length ? 'Bills saved.' : 'No bills to save.' };
 }

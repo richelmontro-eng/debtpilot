@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Beaker, CalendarClock, CircleDollarSign, RotateCcw, TrendingDown, WalletCards } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { PayoffDebt, simulatePayoff } from '@/lib/payoff';
+import { mapDebtRow } from '@/lib/debt-persistence';
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 
@@ -75,14 +76,7 @@ export default function WhatIfPage() {
         if (bill.frequency === 'annual') return sum + amount / 12;
         return sum + amount;
       }, 0));
-      setDebts((debtRows ?? []).map(row => ({
-        id: row.id,
-        name: row.name,
-        balance: Number(row.balance),
-        apr: Number(row.apr),
-        minimum: Number(row.minimum_payment),
-        promotionType: row.promotion_type ?? 'none', promotionalApr: Number(row.promotional_apr ?? 0), promotionEndDate: row.promotion_end_date, postPromotionApr: Number(row.post_promotion_apr ?? row.apr), originalPromotionalBalance: Number(row.original_promotional_balance ?? row.balance), estimatedDeferredInterest: Number(row.estimated_deferred_interest ?? 0),
-      })));
+      setDebts((debtRows ?? []).map(mapDebtRow));
       setLoading(false);
     })();
   }, []);
