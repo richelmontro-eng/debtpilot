@@ -9,6 +9,7 @@ import { getRecommendationId, type CompletedRecommendation, type PilotCategory }
 import { buildCommandCenter, getSafeDashboardError } from '@/lib/intelligence';
 import PilotReasoning from '@/components/pilot-reasoning';
 import { analyzePromotion, promotionStatusLabel } from '@/lib/promotions';
+import { getSafeBillSaveMessage, logBillSaveError, validateOnboardingBill } from '@/lib/onboarding-bills';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 
 type Debt = { id: string; name: string; balance: number; apr: number; minimum: number; promotionType: 'none' | 'zero_percent' | 'deferred_interest'; promotionalApr: number; promotionEndDate: string; postPromotionApr: number; originalPromotionalBalance: number; estimatedDeferredInterest: number };
@@ -35,7 +36,7 @@ function daysUntilDue(dueDay: number) {
   return Math.ceil((nextMonth.getTime() - startToday.getTime()) / 86400000);
 }
 
-type SaveResult<T> = { items: T[]; error: PostgrestError | null };
+type SaveResult<T> = { items: T[]; error: PostgrestError | null; message?: string };
 
 function isMissingRecommendationHistory(error: PostgrestError | null) {
   return error?.code === '42P01' || error?.code === 'PGRST205';
@@ -78,8 +79,12 @@ async function saveDebtsSafely(supabase: SupabaseClient, userId: string, debts: 
 }
 
 async function saveBillsSafely(supabase: SupabaseClient, userId: string, bills: Bill[]): Promise<SaveResult<Bill>> {
+  for (const bill of bills) {
+    const validation = validateOnboardingBill(bill);
+    if (validation) return { items: bills, error: null, message: validation };
+  }
   const { data: existing, error: readError } = await supabase.from('bills').select('id').eq('user_id', userId);
-  if (readError) return { items: bills, error: readError };
+  if (readError) { logBillSaveError('dashboard select bill ids', readError); return { items: bills, error: readError, message: 'Bills could not be loaded for saving. Please try again.' }; }
 
   const saved: Bill[] = [];
   for (const [index, bill] of bills.entries()) {
@@ -90,11 +95,9 @@ async function saveBillsSafely(supabase: SupabaseClient, userId: string, bills: 
       due_day: Math.min(31, Math.max(1, bill.dueDay)),
       frequency: bill.frequency,
     };
-    const query = bill.id.startsWith('new-')
-      ? supabase.from('bills').insert(payload)
-      : supabase.from('bills').upsert({ id: bill.id, ...payload }, { onConflict: 'id' });
+    const query = supabase.from('bills').upsert({ id: bill.id, ...payload }, { onConflict: 'id' });
     const { data, error } = await query.select('id').single();
-    if (error) return { items: [...saved, ...bills.slice(index)], error };
+    if (error) { logBillSaveError('dashboard upsert bill', error, bill); return { items: [...saved, ...bills.slice(index)], error, message: getSafeBillSaveMessage(bill, error) }; }
     saved.push({ ...bill, id: data.id, amount: payload.amount, dueDay: payload.due_day });
   }
 
@@ -102,7 +105,7 @@ async function saveBillsSafely(supabase: SupabaseClient, userId: string, bills: 
   const removedIds = (existing ?? []).map(row => row.id).filter(id => !savedIds.has(id));
   if (removedIds.length) {
     const { error } = await supabase.from('bills').delete().eq('user_id', userId).in('id', removedIds);
-    if (error) return { items: saved, error };
+    if (error) { logBillSaveError('dashboard remove deleted bills', error); return { items: saved, error, message: 'An older bill could not be removed. Please try again.' }; }
   }
   return { items: saved, error: null };
 }
@@ -287,7 +290,7 @@ export default function Home() {
     setBills(items => items.map(item => item.id === id ? { ...item, [field]: field === 'name' || field === 'frequency' ? value : Number(value) } : item));
   }
   function addDebt() { setDebts(items => [...items, { id: `new-${crypto.randomUUID()}`, name: 'New debt', balance: 0, apr: 0, minimum: 0, promotionType: 'none', promotionalApr: 0, promotionEndDate: '', postPromotionApr: 0, originalPromotionalBalance: 0, estimatedDeferredInterest: 0 }]); }
-  function addBill() { setBills(items => [...items, { id: `new-${crypto.randomUUID()}`, name: 'New bill', amount: 0, dueDay: 1, frequency: 'monthly' }]); }
+  function addBill() { setBills(items => [...items, { id: crypto.randomUUID(), name: 'New bill', amount: 0, dueDay: 1, frequency: 'monthly' }]); }
 
   async function save() {
     const supabase = createClient();
@@ -306,7 +309,7 @@ export default function Home() {
     setDebts(debtResult.items);
     setBills(billResult.items);
     const error = profileError || debtResult.error || billResult.error;
-    setNotice(error ? 'We could not save every change. Review your connection and try again.' : 'Saved successfully. Your paycheck plan is up to date.');
+    setNotice(billResult.message ?? (error ? 'We could not save every change. Review your connection and try again.' : 'Saved successfully. Your paycheck plan is up to date.'));
     setSaving(false);
   }
 

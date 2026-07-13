@@ -6,6 +6,7 @@ import { Check, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import InfoTooltip from '@/components/info-tooltip';
 import { createClient } from '@/lib/supabase';
 import { getResumeStep, getWelcomeAction } from '@/lib/onboarding';
+import { saveOnboardingBills, validateOnboardingBill, type BillStore } from '@/lib/onboarding-bills';
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 type DebtDraft = { id: string; name: string; balance: number; apr: number; minimum: number; promotionType: 'none' | 'zero_percent' | 'deferred_interest'; promotionalApr: number; promotionEndDate: string; postPromotionApr: number; originalPromotionalBalance: number; estimatedDeferredInterest: number };
@@ -69,6 +70,10 @@ export default function WelcomePage() {
     const supabase = createClient();
     if (!supabase || !userId || saving) return;
     setSaving(true); setMessage('');
+    if (step === 4) {
+      const invalidBill = draft.bills.map(bill => validateOnboardingBill(bill)).find(Boolean);
+      if (invalidBill) { setSaving(false); setMessage(invalidBill); return; }
+    }
     const nextStep = Math.min(5, step + 1);
     const { error } = await supabase.from('profiles').upsert({
       user_id: userId,
@@ -86,18 +91,36 @@ export default function WelcomePage() {
     const supabase = createClient();
     if (!supabase || !userId || saving) return;
     setSaving(true); setMessage('');
+    const billStore: BillStore = {
+      async upsert(bill) {
+        const { error } = await supabase.from('bills').upsert({ id: bill.id, user_id: userId, name: bill.name, amount: bill.amount, due_day: bill.dueDay, frequency: bill.frequency }, { onConflict: 'id' });
+        return { error };
+      },
+      async listIds() {
+        const { data, error } = await supabase.from('bills').select('id').eq('user_id', userId);
+        return { ids: (data ?? []).map(row => row.id), error };
+      },
+      async remove(ids) {
+        const { error } = await supabase.from('bills').delete().eq('user_id', userId).in('id', ids);
+        return { error };
+      },
+    };
+    const billResult = await saveOnboardingBills(billStore, draft.bills);
+    if (!billResult.ok) { setSaving(false); setMessage(billResult.message); return; }
     const results = await Promise.all([
       supabase.from('debts').delete().eq('user_id', userId),
-      supabase.from('bills').delete().eq('user_id', userId),
       supabase.from('goals').delete().eq('user_id', userId),
     ]);
     let error = results.find(result => result.error)?.error ?? null;
     if (!error && draft.debts.length) ({ error } = await supabase.from('debts').insert(draft.debts.map(debt => ({ user_id: userId, name: debt.name, balance: Math.max(0, debt.balance), apr: Math.max(0, debt.apr), minimum_payment: Math.max(0, debt.minimum), promotion_type: debt.promotionType, promotional_apr: Math.max(0, debt.promotionalApr), promotion_end_date: debt.promotionEndDate || null, post_promotion_apr: Math.max(0, debt.postPromotionApr), original_promotional_balance: Math.max(0, debt.originalPromotionalBalance), estimated_deferred_interest: Math.max(0, debt.estimatedDeferredInterest) }))));
-    if (!error && draft.bills.length) ({ error } = await supabase.from('bills').insert(draft.bills.map(bill => ({ user_id: userId, name: bill.name, amount: Math.max(0, bill.amount), due_day: Math.min(31, Math.max(1, bill.dueDay)), frequency: bill.frequency }))));
     if (!error && draft.goals.length) ({ error } = await supabase.from('goals').insert(draft.goals.map(goal => ({ user_id: userId, name: goal.name, goal_type: goal.goalType, target_amount: Math.max(0, goal.targetAmount), current_amount: Math.max(0, goal.currentAmount), priority: goal.priority }))));
     if (!error) ({ error } = await supabase.from('profiles').update({ onboarding_completed: true, onboarding_step: 5, updated_at: new Date().toISOString() }).eq('user_id', userId));
     setSaving(false);
-    if (error) { setMessage(`Could not finish setup: ${error.message}`); return; }
+    if (error) {
+      if (process.env.NODE_ENV !== 'production') console.error('[DebtPilot onboarding finish]', { code: error.code, message: error.message, details: error.details, hint: error.hint });
+      setMessage('We could not finish setup. Your bills are saved; please try again.');
+      return;
+    }
     router.replace('/'); router.refresh();
   }
 
