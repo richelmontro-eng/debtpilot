@@ -16,6 +16,28 @@ describe('Pilot intelligence platform', () => {
     expect(groupTimelineEvents(events, new Date('2026-07-12T12:00:00')).map(group => group.label)).toEqual(['Today', 'Tomorrow', 'This Week']);
   });
 
+  it('adds paid bill occurrences to the completed timeline', () => {
+    const events = deriveFinancialEvents({
+      now: new Date('2026-07-12T12:00:00'),
+      cycleDays: 7,
+      payPerCheck: 1000,
+      bills: [],
+      debts: [],
+      goals: [],
+      pulse,
+      recommendation,
+      billOccurrences: [{ id: 'occurrence-1', billId: 'bill-1', name: 'Internet', paidAmount: 85, status: 'paid', paidAt: '2026-07-12T09:30:00Z' }],
+    });
+
+    expect(events).toContainEqual(expect.objectContaining({
+      id: 'bill-paid-occurrence-1',
+      type: 'bill',
+      status: 'completed',
+      title: 'Internet paid',
+      amount: 85,
+    }));
+  });
+
   it('creates complete deterministic insight records', () => {
     const events = deriveFinancialEvents({ now: new Date(), cycleDays: 7, payPerCheck: 1000, bills: [], debts: [], goals: [], pulse, recommendation });
     const insights = generatePilotInsights({ checking: 0, checkingCushion: 100, safeExtra: 0, billsReserve: 0, payPerCheck: 1000, debts: [], bills: [], goals: [], recommendation, events });

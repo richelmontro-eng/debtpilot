@@ -16,9 +16,10 @@ export function buildCommandCenter(input: {
   goals: DashboardGoal[];
   recommendationHistory: CompletedRecommendation[];
   snapshots?: IntelligenceSnapshot[];
+  billOccurrences?: Array<{ id:string; billId:string; name:string; paidAt:string|null; paidAmount:number|null; status:string }>;
 }) {
   const pilot = getPilotBriefing(input.financialState);
-  const events = deriveFinancialEvents({ now: input.now, cycleDays: input.cycleDays, payPerCheck: input.financialState.payPerCheck, payPeriodsPerYear: input.financialState.payPeriodsPerYear, bills: input.bills, debts: input.debts, goals: input.goals, pulse: pilot.pulse, recommendation: pilot.recommendation, recommendationHistory: input.recommendationHistory });
+  const events = deriveFinancialEvents({ now: input.now, cycleDays: input.cycleDays, payPerCheck: input.financialState.payPerCheck, payPeriodsPerYear: input.financialState.payPeriodsPerYear, bills: input.bills, debts: input.debts, goals: input.goals, pulse: pilot.pulse, recommendation: pilot.recommendation, recommendationHistory: input.recommendationHistory, billOccurrences: input.billOccurrences });
   return {
     pilot,
     briefing: getBriefingSummary({ pulse: pilot.pulse, safeExtra: input.financialState.safeExtra, availableBeforeCushion: input.financialState.availableBeforeCushion, cushionGap: input.financialState.cushionGap, recommendation: pilot.recommendation }),

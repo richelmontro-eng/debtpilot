@@ -224,7 +224,7 @@ export default function Home() {
     })),
     payPeriodsPerYear: schedule.periods,
   };
-  const commandCenter = buildCommandCenter({ now: new Date(), cycleDays: schedule.cycleDays, financialState, checking, checkingCushion, billsReserve, debts, bills: intelligenceBills, goals, recommendationHistory });
+  const commandCenter = buildCommandCenter({ now: new Date(), cycleDays: schedule.cycleDays, financialState, checking, checkingCushion, billsReserve, debts, bills: intelligenceBills, goals, recommendationHistory, billOccurrences: billOccurrences.map(item => ({ id:item.id, billId:item.billId, name:bills.find(bill=>bill.id===item.billId)?.name??'Bill', paidAt:item.paidAt, paidAmount:item.paidAmount, status:item.status })) });
   const briefing = commandCenter.pilot;
   const pilot = briefing.recommendation;
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening';

@@ -31,6 +31,7 @@ export function deriveFinancialEvents(input: {
   recommendation: Recommendation;
   recommendationHistory?: CompletedRecommendation[];
   purchaseAnalyses?: Array<{ id: string; itemName: string; decision: string; purchasePrice: number; analyzedAt: string }>;
+  billOccurrences?: Array<{ id:string; billId:string; name:string; paidAt:string|null; paidAmount:number|null; status:string }>;
 }): FinancialEvent[] {
   const events: FinancialEvent[] = [];
   if (input.payPerCheck > 0) {
@@ -41,6 +42,10 @@ export function deriveFinancialEvents(input: {
     if (!bill.dueDay || bill.dueDay < 1 || bill.dueDay > 31) continue;
     const date = bill.frequency === 'weekly' ? startOfDay(input.now) : nextMonthlyDue(input.now, bill.dueDay);
     events.push({ id: `bill-${bill.id}`, type: 'bill', occurredAt: date.toISOString(), status: 'projected', title: bill.name, summary: 'Expected bill from the saved schedule.', amount: bill.amount, direction: 'outflow', sourceId: bill.id });
+  }
+  for (const occurrence of input.billOccurrences ?? []) {
+    if (occurrence.status !== 'paid' || !occurrence.paidAt) continue;
+    events.push({ id: `bill-paid-${occurrence.id}`, type: 'bill', occurredAt: occurrence.paidAt, status: 'completed', title: `${occurrence.name} paid`, summary: 'Bill payment recorded.', amount: occurrence.paidAmount ?? undefined, direction: 'outflow', sourceId: occurrence.billId });
   }
   for (const debt of input.debts.filter(item => item.balance > 0)) {
     const promotion = analyzePromotion(debt, { now: input.now, payPeriodsPerYear: input.payPeriodsPerYear ?? 12, plannedMonthlyPayment: debt.minimum });
