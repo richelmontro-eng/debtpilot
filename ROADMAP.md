@@ -4,6 +4,8 @@ Status legend: ✅ Completed · 🚧 In progress · 🗓️ Planned
 
 ## Milestone 1 — Foundation
 
+- ✅ Navigation 3.0 journey groups, dedicated Bills/Debts/Paychecks pages, breadcrumbs, and future-ready search/badges
+
 - ✅ Email/password authentication and account management
 - ✅ Cross-device email confirmation with cookie-backed sessions
 - ✅ User-owned financial profiles and row-level data isolation

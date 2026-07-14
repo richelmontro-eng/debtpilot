@@ -2,82 +2,30 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, BarChart3, Beaker, Bot, CalendarRange, Car, Gauge, Inbox, LogOut, Menu, ReceiptText, Settings, ShoppingBag, Target, X } from 'lucide-react';
+import { BarChart3, Beaker, Bot, CalendarClock, Car, ChevronDown, CreditCard, FileClock, Gauge, Goal, LogOut, Menu, ReceiptText, Search, Settings, ShieldCheck, ShoppingBag, UserRound, WalletCards, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createClient } from '../lib/supabase';
 import { APP_VERSION } from '../lib/version';
 
-const links = [
-  { href: '/', label: 'Dashboard', icon: Gauge },
-  { href: '/before-you-buy', label: 'Before You Buy', icon: ShoppingBag },
-  { href: '/pilot', label: 'Pilot advisor', icon: Bot },
-  { href: '/transactions', label: 'Transactions', icon: ReceiptText },
-  { href: '/inbox', label: 'Financial inbox', icon: Inbox },
-  { href: '/forecast', label: 'Cash flow', icon: CalendarRange },
-  { href: '/insights', label: 'Net worth & health', icon: Activity },
-  { href: '/payoff', label: 'Payoff planner', icon: BarChart3 },
-  { href: '/goals', label: 'Goals', icon: Target },
-  { href: '/vehicles', label: 'Vehicle planner', icon: Car },
-  { href: '/what-if', label: 'What-If Lab', icon: Beaker },
+export const navigationGroups = [
+  { label: 'Today', items: [{ href: '/', label: 'Command Center', icon: Gauge }, { href: '/before-you-buy', label: 'Before You Buy', icon: ShoppingBag }] },
+  { label: 'Cash Flow', items: [{ href: '/transactions', label: 'Transactions', icon: ReceiptText }, { href: '/bills', label: 'Bills', icon: CalendarClock, badge: 'New' }, { href: '/paychecks', label: 'Paychecks', icon: WalletCards }] },
+  { label: 'Debt', items: [{ href: '/debts', label: 'Debts', icon: CreditCard, badge: 'New' }, { href: '/payoff', label: 'Payoff Strategy', icon: BarChart3 }] },
+  { label: 'Goals', items: [{ href: '/goals', label: 'Goals', icon: Goal }] },
+  { label: 'Intelligence', items: [{ href: '/#timeline', label: 'Timeline', icon: CalendarClock }, { href: '/pilot', label: 'Pilot Insights', icon: Bot }, { href: '/#recommendation-history', label: 'Recommendation History', icon: FileClock }] },
+  { label: 'Planning', items: [{ href: '/what-if', label: 'What-If Lab', icon: Beaker }, { href: '/vehicles', label: 'Vehicle Planner', icon: Car }] },
+  { label: 'Account', items: [{ href: '/settings#profile', label: 'Profile', icon: UserRound }, { href: '/settings#security', label: 'Account & Security', icon: ShieldCheck }, { href: '/settings', label: 'Settings', icon: Settings }] },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const [open, setOpen] = useState(false);
-  const [account, setAccount] = useState({ displayName: '', email: '' });
+  const pathname = usePathname(); const [open, setOpen] = useState(false); const [account, setAccount] = useState({ displayName: '', email: '' });
   const isPublic = pathname === '/login' || pathname === '/welcome' || pathname === '/forgot-password' || pathname === '/reset-password' || pathname.startsWith('/auth/');
-
-  useEffect(() => {
-    const supabase = createClient();
-    if (!supabase || isPublic) return;
-    void (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data } = await supabase.from('profiles').select('display_name').eq('user_id', user.id).maybeSingle();
-      setAccount({ displayName: data?.display_name || user.email?.split('@')[0] || 'DebtPilot user', email: user.email ?? '' });
-    })();
-  }, [isPublic]);
-
-  async function signOut() {
-    const supabase = createClient();
-    if (supabase) await supabase.auth.signOut({ scope: 'local' });
-    window.location.assign('/login');
-  }
-
+  useEffect(() => { const supabase = createClient(); if (!supabase || isPublic) return; void (async () => { const { data: { user } } = await supabase.auth.getUser(); if (!user) return; const { data } = await supabase.from('profiles').select('display_name').eq('user_id', user.id).maybeSingle(); setAccount({ displayName: data?.display_name || user.email?.split('@')[0] || 'DebtPilot user', email: user.email ?? '' }); })(); }, [isPublic]);
+  async function signOut() { const supabase = createClient(); if (supabase) await supabase.auth.signOut({ scope: 'local' }); window.location.assign('/login'); }
   if (isPublic) return <>{children}</>;
-
-  return <div className="min-h-screen bg-slate-950 text-slate-100">
-    <header className="sticky top-0 z-50 flex items-center justify-between border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur lg:hidden">
-      <Link href="/" className="font-semibold text-cyan-300">DebtPilot</Link>
-      <button type="button" aria-label="Open navigation" onClick={() => setOpen(true)} className="rounded-lg border border-slate-700 p-2 text-slate-300"><Menu size={20}/></button>
-    </header>
-
-    {open && <button aria-label="Close navigation overlay" onClick={() => setOpen(false)} className="fixed inset-0 z-40 bg-black/60 lg:hidden"/>}
-
-    <aside className={`fixed inset-y-0 left-0 z-50 w-72 border-r border-slate-800 bg-slate-950 p-5 transition-transform lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-      <div className="flex items-center justify-between">
-        <Link href="/" onClick={() => setOpen(false)} className="text-xl font-semibold text-cyan-300">DebtPilot</Link>
-        <button type="button" aria-label="Close navigation" onClick={() => setOpen(false)} className="rounded-lg p-2 text-slate-400 lg:hidden"><X size={20}/></button>
-      </div>
-      <p className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-600">Financial operating system</p>
-
-      <nav className="mt-8 space-y-1.5">
-        {links.map(({ href, label, icon: Icon }) => {
-          const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
-          return <Link key={href} href={href} onClick={() => setOpen(false)} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${active ? 'bg-cyan-400/10 text-cyan-300' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-100'}`}><Icon size={18}/>{label}</Link>;
-        })}
-      </nav>
-
-      <div className="absolute inset-x-5 bottom-5">
-        <AccountPanel displayName={account.displayName} email={account.email} onSignOut={signOut}/>
-      </div>
-    </aside>
-
-    <div className="lg:pl-72">{children}</div>
-  </div>;
+  const current = navigationGroups.flatMap(group => group.items).find(item => item.href.split('#')[0] === pathname)?.label ?? 'DebtPilot';
+  return <div className="min-h-screen bg-slate-950 text-slate-100"><header className="sticky top-0 z-50 flex items-center justify-between border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur lg:hidden"><Link href="/" className="font-semibold text-cyan-300">DebtPilot</Link><button type="button" aria-label="Open navigation" aria-expanded={open} onClick={() => setOpen(true)} className="rounded-lg border border-slate-700 p-2 text-slate-300 focus-visible:ring-2 focus-visible:ring-cyan-300"><Menu size={20}/></button></header>{open && <button aria-label="Close navigation overlay" onClick={() => setOpen(false)} className="fixed inset-0 z-40 bg-black/60 lg:hidden"/>}<aside aria-label="Primary navigation" className={`fixed inset-y-0 left-0 z-50 flex w-80 flex-col border-r border-slate-800 bg-slate-950 transition-transform lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}><div className="p-5 pb-3"><div className="flex items-center justify-between"><Link href="/" onClick={() => setOpen(false)} className="text-xl font-semibold text-cyan-300">DebtPilot</Link><button type="button" aria-label="Close navigation" onClick={() => setOpen(false)} className="rounded-lg p-2 text-slate-400 focus-visible:ring-2 focus-visible:ring-cyan-300 lg:hidden"><X size={20}/></button></div><label className="relative mt-5 block"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" size={15}/><span className="sr-only">Global search</span><input disabled aria-label="Global search coming soon" placeholder="Search DebtPilot (coming soon)" className="field w-full pl-9 text-xs disabled:cursor-not-allowed disabled:opacity-60"/></label></div><nav className="flex-1 overflow-y-auto px-4 pb-4">{navigationGroups.map(group => <NavigationGroup key={group.label} group={group} pathname={pathname} close={() => setOpen(false)}/>)}</nav><div className="border-t border-slate-800 p-4"><AccountPanel displayName={account.displayName} email={account.email} onSignOut={signOut}/></div></aside><div className="lg:pl-80"><div className="border-b border-slate-900 px-5 py-3 text-xs text-slate-500"><Link href="/" className="hover:text-cyan-300">DebtPilot</Link><span aria-hidden="true" className="mx-2">/</span><span aria-current="page" className="text-slate-300">{current}</span></div>{children}</div></div>;
 }
+function NavigationGroup({ group, pathname, close }: { group: typeof navigationGroups[number]; pathname: string; close: () => void }) { const containsActive = group.items.some(item => item.href.split('#')[0] === pathname); const [expanded, setExpanded] = useState(containsActive || ['Today', 'Cash Flow'].includes(group.label)); return <section className="mb-1"><button type="button" onClick={() => setExpanded(value => !value)} aria-expanded={expanded} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 focus-visible:ring-2 focus-visible:ring-cyan-300"><span>{group.label}</span><ChevronDown size={14} className={`transition ${expanded ? 'rotate-180' : ''}`}/></button>{expanded && <div className="space-y-1 pb-2">{group.items.map(({ href, label, icon: Icon, ...item }) => { const active = href === '/' ? pathname === '/' : href.split('#')[0] === pathname; return <Link key={`${group.label}-${label}`} href={href} onClick={close} aria-current={active ? 'page' : undefined} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-cyan-300 ${active ? 'bg-cyan-400/10 text-cyan-300' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-100'}`}><Icon size={17}/><span className="flex-1">{label}</span>{'badge' in item && item.badge && <span className="rounded-full bg-cyan-400/10 px-2 py-0.5 text-[10px] text-cyan-300">{item.badge}</span>}</Link>; })}</div>}</section>; }
 
-export function AccountPanel({ displayName, email, onSignOut }: { displayName: string; email: string; onSignOut: () => void }) {
-  const initial = (displayName || email || 'D').charAt(0).toUpperCase();
-  return <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-cyan-400 font-semibold text-slate-950">{initial}</div><div className="min-w-0"><p className="truncate text-sm font-medium text-slate-200">{displayName || 'DebtPilot user'}</p><p className="truncate text-xs text-slate-500">{email}</p></div></div><div className="mt-4 grid gap-2"><Link href="/settings" className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-cyan-300"><Settings size={15}/>Settings</Link><button type="button" onClick={onSignOut} className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-rose-300 hover:bg-rose-400/10 focus-visible:ring-2 focus-visible:ring-cyan-300"><LogOut size={15}/>Sign Out</button></div><p className="mt-3 border-t border-slate-800 pt-3 text-center text-[11px] text-slate-600">DebtPilot v{APP_VERSION}</p></div>;
-}
+export function AccountPanel({ displayName, email, onSignOut }: { displayName: string; email: string; onSignOut: () => void }) { const initial = (displayName || email || 'D').charAt(0).toUpperCase(); return <div><div className="flex items-center gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-cyan-400 font-semibold text-slate-950">{initial}</div><div className="min-w-0"><p className="truncate text-sm text-slate-200">{displayName || 'DebtPilot user'}</p><p className="truncate text-xs text-slate-500">{email}</p></div></div><div className="mt-3 grid grid-cols-2 gap-2"><Link href="/settings" className="rounded-lg px-3 py-2 text-center text-xs text-slate-300 hover:bg-slate-900 focus-visible:ring-2 focus-visible:ring-cyan-300">Settings</Link><button type="button" onClick={onSignOut} className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs text-rose-300 hover:bg-rose-400/10 focus-visible:ring-2 focus-visible:ring-cyan-300"><LogOut size={15}/>Sign Out</button></div><p className="mt-2 text-center text-[10px] text-slate-700">v{APP_VERSION}</p></div>; }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.24.0 — Navigation 3.0
+
+- Reorganized navigation around Today, Cash Flow, Debt, Goals, Intelligence, Planning, and Account.
+- Added focused Bills, Debts, and Paychecks pages without removing management functionality.
+- Simplified the Command Center to briefing, Pilot, insights, health, timeline, history, and upcoming items.
+- Added collapsible keyboard-friendly groups, active states, mobile drawer behavior, breadcrumbs, badges, and a search placeholder.
+
 ## 0.23.0 — Promotional interest debts
 
 - Added 0% APR and deferred-interest debt terms, deadline calculations, payoff simulation, and status cards.

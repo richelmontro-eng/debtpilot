@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowRight, CalendarDays, CheckCircle2, Clock3, CreditCard, Gauge, Info, ListChecks, Plus, Save, Target, Trash2, Trophy, WalletCards } from 'lucide-react';
+import { ArrowRight, CalendarDays, CheckCircle2, Clock3, CreditCard, Gauge, Info, ListChecks, Save, Target, Trophy, WalletCards } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { getRecommendationId, type CompletedRecommendation, type PilotCategory } from '@/lib/pilot';
 import { buildCommandCenter, getSafeDashboardError } from '@/lib/intelligence';
@@ -262,21 +262,6 @@ export default function Home() {
     setCompletingRecommendation(false);
   }
 
-  function updateDebt(id: string, field: keyof Debt, value: string) {
-    setDebts(items => items.map(item => {
-      if (item.id !== id) return item;
-      if (field === 'promotionType') return value === 'none' ? { ...item, promotionType: 'none', promotionalApr: null, promotionEndDate: '', postPromotionApr: null, originalPromotionalBalance: null, estimatedDeferredInterest: null } : { ...item, promotionType: value as Debt['promotionType'] };
-      if (field === 'name' || field === 'promotionEndDate') return { ...item, [field]: value };
-      const optional = field === 'promotionalApr' || field === 'postPromotionApr' || field === 'originalPromotionalBalance' || field === 'estimatedDeferredInterest';
-      return { ...item, [field]: optional ? optionalNumber(value) : Number(value) };
-    }));
-  }
-  function updateBill(id: string, field: keyof Bill, value: string) {
-    setBills(items => items.map(item => item.id === id ? { ...item, [field]: field === 'name' || field === 'frequency' ? value : Number(value) } : item));
-  }
-  function addDebt() { setDebts(items => [...items, { id: crypto.randomUUID(), name: 'New debt', balance: 0, apr: 0, minimum: 0, promotionType: 'none', promotionalApr: null, promotionEndDate: '', postPromotionApr: null, originalPromotionalBalance: null, estimatedDeferredInterest: null }]); }
-  function addBill() { setBills(items => [...items, { id: crypto.randomUUID(), name: 'New bill', amount: 0, dueDay: 1, frequency: 'monthly' }]); }
-
   async function save() {
     const supabase = createClient();
     if (!supabase || !userId || saving) return;
@@ -325,21 +310,7 @@ export default function Home() {
     {missingInformation.length > 0 && <section className="mt-6"><Card title="Missing information"><p className="-mt-2 mb-5 text-sm leading-6 text-slate-400">Complete these details to make your briefing and Pilot recommendation more precise.</p><div className="grid gap-3 md:grid-cols-2">{missingInformation.map(item => <Link key={item.label} href={item.href} className="group flex items-start gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 transition hover:border-amber-400/40"><ListChecks className="mt-0.5 shrink-0 text-amber-300" size={19}/><span className="min-w-0 flex-1"><span className="block font-medium text-slate-200">{item.label}</span><span className="mt-1 block text-sm leading-5 text-slate-500">{item.detail}</span></span><ArrowRight className="mt-1 shrink-0 text-slate-600 transition group-hover:translate-x-1 group-hover:text-amber-300" size={17}/></Link>)}</div></Card></section>}
 
     <section className="mt-6 grid gap-6 xl:grid-cols-3">
-      <Card title="Paycheck planner" className="xl:col-span-2">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="block text-xs text-slate-400"><HelpLabel label="Pay frequency" help="Pay frequency is managed in Settings. DebtPilot uses it to convert monthly obligations into a per-paycheck reserve."/><div className="field mt-1 w-full text-slate-200" aria-label="Pay frequency">{schedule.label}</div></div>
-          <NumberField label="Net pay per check" help="The amount deposited after taxes and payroll deductions." value={payPerCheck} onChange={setPayPerCheck}/>
-          <NumberField label="Living reserve per check" help="Money protected for groceries, fuel, personal spending, and everyday expenses until the next check." value={livingReserve} onChange={setLivingReserve}/>
-          <NumberField label="Checking balance" help="Your currently available checking balance after pending transactions." value={checking} onChange={setChecking}/>
-          <NumberField label="Protected checking cushion" help="The minimum checking balance you prefer to leave untouched for surprises and timing differences." value={checkingCushion} onChange={setCheckingCushion}/>
-          <NumberField label="Savings balance" help="Your current total savings balance. Goal progress is managed separately on the Goals page." value={savings} onChange={setSavings}/>
-          <label className="block text-xs text-slate-400"><HelpLabel label="Debt strategy" help="Avalanche minimizes interest by targeting the highest APR. Snowball targets the smallest balance first."/><select className="field mt-1 w-full" value={strategy} onChange={e => setStrategy(e.target.value as 'avalanche' | 'snowball')}><option value="avalanche">Avalanche — highest APR</option><option value="snowball">Snowball — smallest balance</option></select></label>
-        </div>
-        <div className="mt-6 grid gap-3 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 sm:grid-cols-4">
-          <Stat label={`${schedule.label} paycheck`} value={money.format(payPerCheck)}/><Stat label="Bills reserved" value={money.format(billsReserve)}/><Stat label="Living + minimums" value={money.format(livingReserve + minimumReservePerCheck)}/><Stat label="After cushion" value={money.format(safeExtra)}/>
-        </div>
-        <p className="mt-3 text-xs text-slate-500">Annualized take-home: {money.format(annualIncome)} • Monthly equivalent: {money.format(monthlyIncome)}</p>
-      </Card>
+      <Card title="Upcoming items" className="xl:col-span-2"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Stat label="Next paycheck" value={money.format(payPerCheck)}/><Stat label="Bills before payday" value={money.format(billsReserve)}/><Stat label="Minimums reserved" value={money.format(minimumReservePerCheck)}/><Stat label="Safe after cushion" value={money.format(safeExtra)}/></div><div className="mt-5 flex flex-wrap gap-3"><Link href="/bills" className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300">View bills</Link><Link href="/transactions" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300">Review transactions</Link><Link href="/paychecks" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300">Update paycheck</Link></div></Card>
 
       <Card title="Pilot recommendation">
         <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-300">{pilot.category === 'goal' ? <Target size={14}/> : pilot.category === 'debt' ? <CreditCard size={14}/> : <WalletCards size={14}/>} {pilot.category === 'none' ? 'No extra action' : pilot.category}</div>
@@ -357,27 +328,17 @@ export default function Home() {
           <div><p className="text-sm font-medium text-slate-200">Why this pulse was assigned</p><ul className="mt-3 list-disc space-y-3 pl-5 text-sm leading-6 text-slate-400">{briefing.pulse.explanation.map(item => <li key={item}>{item}</li>)}</ul></div>
         </div>
       </Card>
-      <Card title="Financial Timeline">
+      <div id="timeline"><Card title="Financial Timeline">
         {timeline.length ? <div className="space-y-6">{timeline.map(group => <section key={group.label}><h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-300">{group.label}</h3><div className="space-y-3">{group.events.map(event => <article key={event.id} className="flex min-w-0 items-start gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4"><div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-cyan-400/25 text-cyan-300"><Clock3 size={14}/></div><div className="min-w-0 flex-1"><div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between"><p className="font-medium">{event.title}</p>{event.amount !== undefined && <p className={`font-semibold ${event.direction === 'inflow' ? 'text-emerald-300' : 'text-slate-200'}`}>{event.direction === 'inflow' ? '+' : event.direction === 'outflow' ? '−' : ''}{money.format(Math.abs(event.amount))}</p>}</div><p className="mt-1 text-sm text-slate-500">{event.summary} · {event.status} · {new Date(event.occurredAt).toLocaleDateString()}</p></div></article>)}</div></section>)}</div> : <Empty text="Your timeline is ready for details. Add a paycheck, recurring bills, or a goal to see what is expected next."/>}
-      </Card>
+      </Card></div>
     </section>
 
     <section className="mt-6 grid gap-6 xl:grid-cols-2">
       <Card title="Recent Wins"><div className="space-y-3">{briefing.recentWins.map(win => <div key={win} className="flex gap-3 rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4"><Trophy className="mt-0.5 shrink-0 text-emerald-300" size={18}/><p className="text-sm leading-6 text-slate-300">{win}</p></div>)}</div></Card>
-      <Card title="Recommendation History">{commandCenter.recommendationHistory.length ? <div className="space-y-3">{commandCenter.recommendationHistory.slice(0, 5).map(event => <div key={event.id} className="rounded-2xl border border-slate-800 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{event.title}</p><p className="mt-1 text-xs capitalize text-slate-500">{String(event.metadata?.category ?? 'recommendation')} • {new Date(event.occurredAt).toLocaleDateString()}</p></div><CheckCircle2 className="shrink-0 text-emerald-300" size={19}/></div>{event.amount !== undefined && <p className="mt-3 text-sm font-semibold text-cyan-300">{money.format(event.amount)} estimated benefit</p>}</div>)}</div> : <Empty text={recommendationHistoryUnavailable ? 'Recommendation history is temporarily unavailable. You can still use the current Pilot recommendation and try again later.' : 'No completed recommendations yet. Mark the current Pilot recommendation complete to record your first win.'}/>}</Card>
+      <div id="recommendation-history"><Card title="Recommendation History">{commandCenter.recommendationHistory.length ? <div className="space-y-3">{commandCenter.recommendationHistory.slice(0, 5).map(event => <div key={event.id} className="rounded-2xl border border-slate-800 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{event.title}</p><p className="mt-1 text-xs capitalize text-slate-500">{String(event.metadata?.category ?? 'recommendation')} • {new Date(event.occurredAt).toLocaleDateString()}</p></div><CheckCircle2 className="shrink-0 text-emerald-300" size={19}/></div>{event.amount !== undefined && <p className="mt-3 text-sm font-semibold text-cyan-300">{money.format(event.amount)} estimated benefit</p>}</div>)}</div> : <Empty text={recommendationHistoryUnavailable ? 'Recommendation history is temporarily unavailable. You can still use the current Pilot recommendation and try again later.' : 'No completed recommendations yet. Mark the current Pilot recommendation complete to record your first win.'}/>}</Card></div>
     </section>
 
     {topGoal && <section className="mt-6"><Card title="Highest-priority unfinished goal"><div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="flex items-center gap-2"><Target className="text-cyan-300"/><p className="text-xl font-semibold">{topGoal.name}</p></div><p className="mt-2 text-sm text-slate-400">Priority {topGoal.priority} • {money.format(topGoal.currentAmount)} of {money.format(topGoal.targetAmount)}</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full bg-cyan-400" style={{ width: `${Math.min(100, topGoal.currentAmount / Math.max(1, topGoal.targetAmount) * 100)}%` }}/></div></div><a href="/goals" className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300">Manage goals</a></div></Card></section>}
-
-    <section className="mt-6 grid gap-6 xl:grid-cols-2">
-      <div id="bills">
-      <Card title="Bills"><button onClick={addBill} className="mb-4 inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300"><Plus size={16}/>Add bill</button><div className="space-y-3">{bills.length === 0 && <Empty text="Add recurring bills so DebtPilot can reserve them before recommending extra payments."/>}{bills.map(bill => <div key={bill.id} className="grid gap-3 rounded-2xl border border-slate-800 p-4 sm:grid-cols-[1.4fr_1fr_1fr_1fr_auto] sm:items-end"><TextField label="Bill" value={bill.name} onChange={value => updateBill(bill.id, 'name', value)}/><NumberField label="Amount" value={bill.amount} onChange={value => updateBill(bill.id, 'amount', String(value))}/><NumberField label="Due day" value={bill.dueDay} onChange={value => updateBill(bill.id, 'dueDay', String(value))}/><label className="block text-xs text-slate-400">Frequency<select className="field mt-1 w-full" value={bill.frequency} onChange={e => updateBill(bill.id, 'frequency', e.target.value)}><option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select></label><button aria-label={`Remove ${bill.name}`} onClick={() => setBills(items => items.filter(item => item.id !== bill.id))} className="rounded-xl border border-rose-400/20 p-3 text-rose-300"><Trash2 size={17}/></button></div>)}</div></Card>
-      </div>
-
-      <div id="debts">
-      <Card title="Debt accounts"><button onClick={addDebt} className="mb-4 inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300"><Plus size={16}/>Add debt</button><div className="space-y-3">{debts.length === 0 && <Empty text="Add each credit card or loan with its balance, APR, monthly minimum, and any promotional terms."/>}{debts.map(debt => <div key={debt.id} className="rounded-2xl border border-slate-800 p-4"><div className="grid gap-3 sm:grid-cols-[1.4fr_1fr_1fr_1fr_auto] sm:items-end"><TextField label="Account" value={debt.name} onChange={value => updateDebt(debt.id, 'name', value)}/><NumberField label="Balance" value={debt.balance} onChange={value => updateDebt(debt.id, 'balance', String(value))}/><NumberField label="Regular APR %" value={debt.apr} onChange={value => updateDebt(debt.id, 'apr', String(value))} step="0.01"/><NumberField label="Monthly minimum" value={debt.minimum} onChange={value => updateDebt(debt.id, 'minimum', String(value))}/><button aria-label={`Remove ${debt.name}`} onClick={() => setDebts(items => items.filter(item => item.id !== debt.id))} className="rounded-xl border border-rose-400/20 p-3 text-rose-300"><Trash2 size={17}/></button></div><PromotionFields debt={debt} periods={schedule.periods} update={(field, value) => updateDebt(debt.id, field, value)}/></div>)}</div></Card>
-      </div>
-    </section>
 
     <p className="mt-6 text-xs leading-5 text-slate-500">Planning estimates only. Confirm lender minimums, statement timing, bill due dates, and savings needs before moving money.</p>
   </div></main>;

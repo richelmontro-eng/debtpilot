@@ -63,6 +63,11 @@ DebtPilot first reserves bills, living needs, debt minimums, and the user-define
 - Paycheck, bill, debt, goal, transaction, and cash-flow planning
 - Financial health, net-worth, payoff, vehicle, and what-if analysis
 - Guided onboarding and durable cross-device account access
+- Journey-based information architecture organized around Today, Cash Flow, Debt, Goals, Intelligence, Planning, and Account
+
+## Navigation and information architecture
+
+The Command Center is a briefing surface, not a management screen. Editing lives in focused Bills, Debts, Paychecks, Goals, Transactions, and Settings destinations. Intelligence remains discoverable through Timeline, Pilot Insights, and Recommendation History. Navigation supports progressive disclosure, active location, mobile and keyboard use, breadcrumbs, future badges, and eventual global search.
 
 ## Long-term milestones
 

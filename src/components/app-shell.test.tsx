@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { AccountPanel } from './app-shell';
+import { AccountPanel, navigationGroups } from './app-shell';
 
 describe('sidebar account panel', () => {
   it('always renders Sign Out and account access', () => {
@@ -8,5 +8,13 @@ describe('sidebar account panel', () => {
     expect(html).toContain('Sign Out');
     expect(html).toContain('Settings');
     expect(html).toContain('avery@example.com');
+  });
+});
+
+describe('Navigation 3.0 information architecture', () => {
+  it('organizes every journey group and dedicated management page', () => {
+    expect(navigationGroups.map(group => group.label)).toEqual(['Today', 'Cash Flow', 'Debt', 'Goals', 'Intelligence', 'Planning', 'Account']);
+    const destinations = navigationGroups.flatMap(group => group.items.map(item => `${item.label}:${item.href}`));
+    expect(destinations).toContain('Bills:/bills'); expect(destinations).toContain('Debts:/debts'); expect(destinations).toContain('Paychecks:/paychecks');
   });
 });
