@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Car, CircleDollarSign, Gauge, Save, ShieldCheck, Trash2, TrendingDown } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
-import { evaluateVehicle, VehicleScenario } from '@/lib/vehicle';
+import { coachVehicle, evaluateVehicle, VehicleScenario } from '@/lib/vehicle';
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 type SavedVehicle = VehicleScenario & { id: string; name: string };
@@ -50,6 +50,7 @@ export default function VehiclePlannerPage() {
     checking: 0,
     savings: 0,
     checkingCushion: 0,
+    existingVehicleMonthly: 0,
   });
 
   useEffect(() => {
@@ -104,6 +105,7 @@ export default function VehiclePlannerPage() {
         checking: Number(profile?.checking_balance ?? 0),
         savings: Number(profile?.savings_balance ?? 0),
         checkingCushion: Number(profile?.checking_cushion ?? 0),
+        existingVehicleMonthly: 0,
       });
       setSavedVehicles((vehicles ?? []).map(row => ({
         id: row.id,
@@ -124,6 +126,7 @@ export default function VehiclePlannerPage() {
   }, []);
 
   const result = useMemo(() => evaluateVehicle(scenario, finances), [scenario, finances]);
+  const coach = useMemo(() => coachVehicle(scenario, finances), [scenario, finances]);
   const comparisons = useMemo(
     () => savedVehicles.map(vehicle => ({ vehicle, result: evaluateVehicle(vehicle, finances) })),
     [savedVehicles, finances],
@@ -249,6 +252,7 @@ export default function VehiclePlannerPage() {
             <NumberField label="Insurance per month" value={scenario.insuranceMonthly} onChange={value => update('insuranceMonthly', value)}/>
             <NumberField label="Fuel per month" value={scenario.fuelMonthly} onChange={value => update('fuelMonthly', value)}/>
             <NumberField label="Maintenance per month" value={scenario.maintenanceMonthly} onChange={value => update('maintenanceMonthly', value)}/>
+            <NumberField label="Existing vehicle obligations per month" value={finances.existingVehicleMonthly} onChange={value => setFinances(current => ({ ...current, existingVehicleMonthly: Math.max(0, value) }))}/>
           </div>
         </div>
 
@@ -266,6 +270,17 @@ export default function VehiclePlannerPage() {
             <div className="mt-5 space-y-3">{result.reasons.map(reason => <div key={reason} className="flex gap-3 text-sm leading-6 text-slate-300"><ShieldCheck className="mt-0.5 shrink-0 text-cyan-300" size={18}/><p>{reason}</p></div>)}</div>
           </div>
         </div>
+      </section>
+
+      <section className={`mt-6 rounded-3xl border p-6 ${coach.affordable ? 'border-emerald-400/25 bg-emerald-400/5' : 'border-amber-400/25 bg-amber-400/5'}`}>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">Vehicle Coach</p>
+        <h2 className="mt-3 text-3xl font-semibold">{coach.affordable ? 'This vehicle fits your safe monthly budget.' : `Based on your current finances, a vehicle around ${money.format(coach.affordablePriceLow)}–${money.format(coach.affordablePriceHigh)} would be a stronger fit.`}</h2>
+        <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-400">{coach.affordable ? 'The purchase remains within the safe vehicle budget, your checking cushion remains protected, recurring bills stay covered, and key goals are not materially delayed.' : coach.reasoning[0]}</p>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Detail label="Entered vehicle price" value={money.format(scenario.price)}/><Detail label="Recommended maximum price" value={money.format(coach.recommendedMaximumPrice)}/><Detail label="Maximum loan amount" value={money.format(coach.maximumLoanAmount)}/><Detail label="Target monthly payment" value={money.format(coach.targetMonthlyPayment)}/><Detail label="Monthly payment difference" value={money.format(coach.monthlyPaymentDifference)}/><Detail label="Additional down payment required" value={money.format(coach.additionalDownPaymentRequired)}/><Detail label="Required total down payment" value={money.format(coach.requiredDownPayment)}/><Detail label="Time to save difference" value={coach.monthsToSaveDifference === null ? 'No current capacity' : `${coach.monthsToSaveDifference} months`}/></div>
+        <div className="mt-6 grid gap-4 lg:grid-cols-3"><CoachText title="Checking cushion" text={coach.impacts.checkingCushion}/><CoachText title="Debts" text={coach.impacts.debts}/><CoachText title="Goals" text={coach.impacts.goals}/></div>
+        {!coach.affordable && <div className="mt-6"><h3 className="text-xl font-semibold">Stronger alternatives</h3><div className="mt-4 grid gap-4 md:grid-cols-2">{coach.alternatives.map(option => <CoachText key={option.title} title={option.title} text={option.detail}/>)}</div></div>}
+        <div className="mt-6 grid gap-6 lg:grid-cols-2"><div><h3 className="font-semibold">Reasoning · {coach.confidence}% confidence</h3><ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-400">{coach.reasoning.map(item => <li key={item}>{item}</li>)}</ul></div><div><h3 className="font-semibold">Assumptions</h3><ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-400">{coach.assumptions.map(item => <li key={item}>{item}</li>)}</ul></div></div>
+        <details className="mt-6 rounded-2xl border border-slate-700 bg-slate-950/50 p-4"><summary className="cursor-pointer font-semibold text-cyan-300">How was this calculated?</summary><p className="mt-3 text-sm leading-6 text-slate-400">{coach.calculation}</p></details>
       </section>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -317,6 +332,8 @@ function Metric({ icon, label, value, accent = false }: { icon: React.ReactNode;
 function Detail({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-2 text-xl font-semibold">{value}</p></div>;
 }
+
+function CoachText({ title, text }: { title: string; text: string }) { return <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4"><p className="font-semibold">{title}</p><p className="mt-2 text-sm leading-6 text-slate-400">{text}</p></div>; }
 
 function Mini({ label, value }: { label: string; value: string }) {
   return <div className="rounded-xl border border-slate-800 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-medium">{value}</p></div>;

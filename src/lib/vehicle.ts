@@ -19,6 +19,16 @@ export type FinancialContext = {
   checking: number;
   savings: number;
   checkingCushion: number;
+  existingVehicleMonthly?: number;
+};
+
+export type VehicleCoach = {
+  affordable: boolean; safeVehicleBudget: number; targetMonthlyPayment: number; maximumLoanAmount: number;
+  recommendedMaximumPrice: number; affordablePriceLow: number; affordablePriceHigh: number;
+  requiredDownPayment: number; additionalDownPaymentRequired: number; monthlyPaymentDifference: number;
+  monthsToSaveDifference: number | null; confidence: number; reasoning: string[]; assumptions: string[];
+  impacts: { checkingCushion: string; debts: string; goals: string }; alternatives: { title: string; detail: string }[];
+  calculation: string;
 };
 
 export type VehicleDecision = {
@@ -41,6 +51,56 @@ export function monthlyLoanPayment(principal: number, annualRate: number, months
   const monthlyRate = Math.max(0, annualRate) / 100 / 12;
   if (monthlyRate === 0) return principal / months;
   return principal * monthlyRate / (1 - Math.pow(1 + monthlyRate, -months));
+}
+
+export function maximumPrincipalForPayment(payment: number, annualRate: number, months: number) {
+  if (payment <= 0 || months <= 0) return 0;
+  const rate = Math.max(0, annualRate) / 100 / 12;
+  return rate === 0 ? payment * months : payment * (1 - Math.pow(1 + rate, -months)) / rate;
+}
+
+export function coachVehicle(scenario: VehicleScenario, finances: FinancialContext): VehicleCoach {
+  const operating = Math.max(0, scenario.insuranceMonthly) + Math.max(0, scenario.fuelMonthly) + Math.max(0, scenario.maintenanceMonthly);
+  const existingVehicle = Math.max(0, finances.existingVehicleMonthly ?? 0);
+  const cushionGap = Math.max(0, finances.checkingCushion - finances.checking);
+  const essentialSurplus = finances.monthlyIncome - finances.monthlyBills - finances.monthlyDebtMinimums - finances.monthlyLiving - cushionGap;
+  const safeVehicleBudget = Math.max(0, Math.min(finances.monthlyIncome * 0.15, essentialSurplus) - existingVehicle);
+  const targetMonthlyPayment = Math.max(0, safeVehicleBudget - operating);
+  const maximumLoanAmount = maximumPrincipalForPayment(targetMonthlyPayment, scenario.apr, scenario.termMonths);
+  const tax = Math.max(0, scenario.taxRate) / 100;
+  const recommendedMaximumPrice = Math.max(0, (maximumLoanAmount + Math.max(0, scenario.downPayment) + Math.max(0, scenario.tradeIn) + tax * Math.max(0, scenario.tradeIn)) / (1 + tax));
+  const financedAtEnteredPrice = Math.max(0, scenario.price + Math.max(0, scenario.price - scenario.tradeIn) * tax - scenario.tradeIn);
+  const requiredDownPayment = Math.max(0, financedAtEnteredPrice - maximumLoanAmount);
+  const additionalDownPaymentRequired = Math.max(0, requiredDownPayment - Math.max(0, scenario.downPayment));
+  const decision = evaluateVehicle(scenario, finances);
+  const monthlyPaymentDifference = Math.max(0, decision.ownershipMonthly - safeVehicleBudget);
+  const cashAffordable = decision.cashDueAtPurchase <= Math.max(0, finances.savings);
+  const affordable = safeVehicleBudget > 0 && decision.ownershipMonthly <= safeVehicleBudget + 0.01 && cashAffordable && cushionGap === 0;
+  const savingCapacity = Math.max(0, essentialSurplus - operating - existingVehicle);
+  const monthsToSaveDifference = additionalDownPaymentRequired <= 0 ? 0 : savingCapacity > 0 ? Math.ceil(additionalDownPaymentRequired / savingCapacity) : null;
+  const confidence = finances.monthlyIncome > 0 && scenario.price >= 0 ? 92 : 55;
+  const impacts = {
+    checkingCushion: cushionGap > 0 ? `Checking is already $${Math.round(cushionGap).toLocaleString()} below the protected cushion.` : affordable ? 'The protected checking cushion remains intact.' : 'Do not use the protected checking cushion to close the affordability gap.',
+    debts: monthlyPaymentDifference > 0 ? `The monthly overage would compete with required debt payments and extra payoff capacity by about $${Math.round(monthlyPaymentDifference).toLocaleString()} per month.` : 'Required debt minimums remain covered.',
+    goals: monthlyPaymentDifference > 0 ? `Goals could receive about $${Math.round(monthlyPaymentDifference).toLocaleString()} less per month.` : 'Key goals are not materially delayed by the modeled monthly cost.',
+  };
+  return {
+    affordable, safeVehicleBudget, targetMonthlyPayment, maximumLoanAmount, recommendedMaximumPrice,
+    affordablePriceLow: recommendedMaximumPrice * 0.8, affordablePriceHigh: recommendedMaximumPrice,
+    requiredDownPayment, additionalDownPaymentRequired, monthlyPaymentDifference, monthsToSaveDifference, confidence,
+    reasoning: affordable
+      ? ['Total ownership cost remains within the safe monthly vehicle budget.', 'Bills, living costs, debt minimums, and the protected cushion remain covered.']
+      : ['The entered total ownership cost exceeds the safe budget calculated after essential obligations.', 'A lower price or larger down payment reduces the loan payment without relying on a longer loan term.'],
+    assumptions: ['Saved take-home income and recurring obligations are current.', 'Insurance, fuel, and maintenance match the amounts entered.', 'Taxes and trade-in reduce or increase the financed balance as entered.', 'The affordable range uses 80% to 100% of the calculated maximum price.'],
+    impacts,
+    alternatives: [
+      { title: 'Lower vehicle price', detail: `Target ${Math.round(recommendedMaximumPrice * 0.8).toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0})}–${Math.round(recommendedMaximumPrice).toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0})}.` },
+      { title: 'Increase down payment', detail: additionalDownPaymentRequired > 0 ? `Add about $${Math.ceil(additionalDownPaymentRequired).toLocaleString()} beyond the entered down payment.` : 'The entered down payment already supports the calculated maximum loan.' },
+      { title: 'Extend the purchase date', detail: monthsToSaveDifference === null ? 'Monthly capacity is negative; first reduce obligations or increase income.' : `Saving the difference would take about ${monthsToSaveDifference} month${monthsToSaveDifference === 1 ? '' : 's'} at current capacity.` },
+      { title: 'Reduce another monthly obligation', detail: `Free about $${Math.ceil(monthlyPaymentDifference).toLocaleString()} per month without reducing bill or debt minimum coverage.` },
+    ],
+    calculation: 'Safe vehicle budget is the lower of 15% of take-home income and cash remaining after bills, debt minimums, living reserve, cushion recovery, and existing vehicle obligations. Operating costs are subtracted, then the remaining payment is converted to a maximum loan principal using the entered APR and term. Taxes, trade-in, and down payment convert that principal into a maximum purchase price.',
+  };
 }
 
 export function evaluateVehicle(scenario: VehicleScenario, finances: FinancialContext): VehicleDecision {
