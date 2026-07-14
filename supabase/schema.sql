@@ -94,6 +94,14 @@ create table if not exists public.financial_snapshots (
   unique(user_id, snapshot_date)
 );
 
+create table if not exists public.bill_occurrences (
+  id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade,
+  bill_id uuid not null references public.bills(id) on delete cascade, due_date date not null,
+  expected_amount numeric(12,2) not null, status text not null default 'upcoming' check (status in ('upcoming','paid','overdue','skipped','partial')),
+  paid_at timestamptz, paid_amount numeric(12,2), transaction_id uuid, created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  unique(user_id,bill_id,due_date)
+);
+
 create table if not exists public.pilot_recommendation_history (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -114,6 +122,7 @@ alter table public.goals enable row level security;
 alter table public.vehicle_scenarios enable row level security;
 alter table public.financial_snapshots enable row level security;
 alter table public.pilot_recommendation_history enable row level security;
+alter table public.bill_occurrences enable row level security;
 
 drop policy if exists "Users manage own profile" on public.profiles;
 drop policy if exists "Users manage own debts" on public.debts;
@@ -124,6 +133,10 @@ drop policy if exists "Users manage own financial snapshots" on public.financial
 drop policy if exists "Users select own pilot recommendation history" on public.pilot_recommendation_history;
 drop policy if exists "Users insert own pilot recommendation history" on public.pilot_recommendation_history;
 drop policy if exists "Users delete own pilot recommendation history" on public.pilot_recommendation_history;
+drop policy if exists "Users select own bill occurrences" on public.bill_occurrences;
+drop policy if exists "Users insert own bill occurrences" on public.bill_occurrences;
+drop policy if exists "Users update own bill occurrences" on public.bill_occurrences;
+drop policy if exists "Users delete own bill occurrences" on public.bill_occurrences;
 
 create policy "Users manage own profile" on public.profiles for all using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 create policy "Users manage own debts" on public.debts for all using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
@@ -134,6 +147,10 @@ create policy "Users manage own financial snapshots" on public.financial_snapsho
 create policy "Users select own pilot recommendation history" on public.pilot_recommendation_history for select to authenticated using ((select auth.uid()) = user_id);
 create policy "Users insert own pilot recommendation history" on public.pilot_recommendation_history for insert to authenticated with check ((select auth.uid()) = user_id);
 create policy "Users delete own pilot recommendation history" on public.pilot_recommendation_history for delete to authenticated using ((select auth.uid()) = user_id);
+create policy "Users select own bill occurrences" on public.bill_occurrences for select to authenticated using ((select auth.uid()) = user_id);
+create policy "Users insert own bill occurrences" on public.bill_occurrences for insert to authenticated with check ((select auth.uid()) = user_id);
+create policy "Users update own bill occurrences" on public.bill_occurrences for update to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "Users delete own bill occurrences" on public.bill_occurrences for delete to authenticated using ((select auth.uid()) = user_id);
 
 create index if not exists debts_user_id_idx on public.debts(user_id);
 create index if not exists bills_user_id_idx on public.bills(user_id);
@@ -142,3 +159,4 @@ create index if not exists vehicle_scenarios_user_id_idx on public.vehicle_scena
 create index if not exists financial_snapshots_user_id_snapshot_date_idx on public.financial_snapshots(user_id, snapshot_date);
 create index if not exists pilot_recommendation_history_user_completed_idx on public.pilot_recommendation_history(user_id, completed_at desc);
 create unique index if not exists pilot_recommendation_history_user_recommendation_uidx on public.pilot_recommendation_history(user_id, recommendation_id);
+create index if not exists bill_occurrences_user_due_idx on public.bill_occurrences(user_id,due_date);

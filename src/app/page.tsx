@@ -11,6 +11,7 @@ import PilotReasoning from '@/components/pilot-reasoning';
 import { analyzePromotion, promotionStatusLabel } from '@/lib/promotions';
 import { getSafeBillSaveMessage, logBillSaveError, validateOnboardingBill } from '@/lib/onboarding-bills';
 import { mapDebtRow, optionalNumber, saveDebts, type PersistedDebt } from '@/lib/debt-persistence';
+import { activeOccurrences, occurrenceDrafts, type BillOccurrence } from '@/lib/bill-occurrences';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 
 type Debt = PersistedDebt;
@@ -110,6 +111,7 @@ export default function Home() {
   const [strategy, setStrategy] = useState<'avalanche' | 'snowball'>('avalanche');
   const [debts, setDebts] = useState<Debt[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [billOccurrences, setBillOccurrences] = useState<BillOccurrence[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
 
   useEffect(() => {
@@ -165,7 +167,12 @@ export default function Home() {
         setStrategy(profile.preferred_strategy === 'snowball' ? 'snowball' : 'avalanche');
       }
       setDebts((debtResult.data ?? []).map(mapDebtRow));
-      setBills((billResult.data ?? []).map(row => ({ id: row.id, name: row.name, amount: Number(row.amount), dueDay: Number(row.due_day ?? 1), frequency: row.frequency ?? 'monthly' })));
+      const loadedBills = (billResult.data ?? []).map(row => ({ id: row.id, name: row.name, amount: Number(row.amount), dueDay: Number(row.due_day ?? 1), frequency: row.frequency ?? 'monthly' }));
+      setBills(loadedBills);
+      const drafts = occurrenceDrafts(user.id, loadedBills);
+      if (drafts.length) await supabase.from('bill_occurrences').upsert(drafts.map(draft => ({ user_id: draft.userId, bill_id: draft.billId, due_date: draft.dueDate, expected_amount: draft.expectedAmount, status: draft.status })), { onConflict: 'user_id,bill_id,due_date', ignoreDuplicates: true });
+      const occurrenceResult = await supabase.from('bill_occurrences').select('*').eq('user_id', user.id).order('due_date');
+      if (!occurrenceResult.error) setBillOccurrences((occurrenceResult.data ?? []).map(row => ({ id: row.id, userId: row.user_id, billId: row.bill_id, dueDate: row.due_date, expectedAmount: Number(row.expected_amount), status: row.status, paidAt: row.paid_at, paidAmount: row.paid_amount == null ? null : Number(row.paid_amount), transactionId: row.transaction_id })));
       setGoals((goalResult.data ?? []).map(row => ({ id: row.id, name: row.name, goalType: row.goal_type, targetAmount: Number(row.target_amount), currentAmount: Number(row.current_amount), priority: Number(row.priority) })));
       setRecommendationHistory((historyResult.data ?? []).map(row => ({
         id: row.id,
@@ -182,8 +189,13 @@ export default function Home() {
   }, [router]);
 
   const schedule = paySchedule[payFrequency];
-  const billsDueSoon = useMemo(() => bills.filter(bill => bill.frequency === 'weekly' || daysUntilDue(bill.dueDay) <= schedule.cycleDays), [bills, schedule.cycleDays]);
+  const billsDueSoon = useMemo(() => {
+    if (!billOccurrences.length) return bills.filter(bill => bill.frequency === 'weekly' || daysUntilDue(bill.dueDay) <= schedule.cycleDays);
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() + schedule.cycleDays);
+    return activeOccurrences(billOccurrences).filter(item => new Date(`${item.dueDate}T12:00:00`) <= cutoff).map(item => ({ id: item.billId, name: bills.find(bill => bill.id === item.billId)?.name ?? 'Bill', amount: Math.max(0, item.expectedAmount - (item.paidAmount ?? 0)), dueDay: new Date(`${item.dueDate}T12:00:00`).getDate(), frequency: 'occurrence' }));
+  }, [bills, billOccurrences, schedule.cycleDays]);
   const billsReserve = billsDueSoon.reduce((sum, bill) => sum + bill.amount, 0);
+  const intelligenceBills = billOccurrences.length ? activeOccurrences(billOccurrences).map(item => ({ id: item.billId, name: bills.find(bill => bill.id === item.billId)?.name ?? 'Bill', amount: Math.max(0, item.expectedAmount - (item.paidAmount ?? 0)), dueDay: new Date(`${item.dueDate}T12:00:00`).getDate(), frequency: 'occurrence' })) : bills;
   const monthlyMinimums = debts.reduce((sum, debt) => sum + debt.minimum, 0);
   const minimumReservePerCheck = monthlyMinimums * 12 / schedule.periods;
   const availableBeforeCushion = Math.max(0, payPerCheck - livingReserve - billsReserve - minimumReservePerCheck);
@@ -212,7 +224,7 @@ export default function Home() {
     })),
     payPeriodsPerYear: schedule.periods,
   };
-  const commandCenter = buildCommandCenter({ now: new Date(), cycleDays: schedule.cycleDays, financialState, checking, checkingCushion, billsReserve, debts, bills, goals, recommendationHistory });
+  const commandCenter = buildCommandCenter({ now: new Date(), cycleDays: schedule.cycleDays, financialState, checking, checkingCushion, billsReserve, debts, bills: intelligenceBills, goals, recommendationHistory });
   const briefing = commandCenter.pilot;
   const pilot = briefing.recommendation;
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening';
@@ -260,6 +272,17 @@ export default function Home() {
     };
     setRecommendationHistory(items => [completed, ...items].slice(0, 5));
     setCompletingRecommendation(false);
+  }
+
+  async function markBillPaid(billId: string) {
+    const occurrence = activeOccurrences(billOccurrences).filter(item => item.billId === billId).sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
+    const supabase = createClient();
+    if (!supabase || !occurrence) { window.location.assign('/bills'); return; }
+    const paidAt = new Date().toISOString();
+    const { error } = await supabase.from('bill_occurrences').update({ status: 'paid', paid_amount: occurrence.expectedAmount, paid_at: paidAt, updated_at: paidAt }).eq('id', occurrence.id).eq('user_id', userId);
+    if (error) { setNotice('We couldn’t mark this bill paid. Please try again.'); return; }
+    setBillOccurrences(items => items.map(item => item.id === occurrence.id ? { ...item, status: 'paid', paidAmount: item.expectedAmount, paidAt } : item));
+    setNotice('Bill marked paid. It was removed from upcoming obligations.');
   }
 
   async function save() {
@@ -310,7 +333,7 @@ export default function Home() {
     {missingInformation.length > 0 && <section className="mt-6"><Card title="Missing information"><p className="-mt-2 mb-5 text-sm leading-6 text-slate-400">Complete these details to make your briefing and Pilot recommendation more precise.</p><div className="grid gap-3 md:grid-cols-2">{missingInformation.map(item => <Link key={item.label} href={item.href} className="group flex items-start gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 transition hover:border-amber-400/40"><ListChecks className="mt-0.5 shrink-0 text-amber-300" size={19}/><span className="min-w-0 flex-1"><span className="block font-medium text-slate-200">{item.label}</span><span className="mt-1 block text-sm leading-5 text-slate-500">{item.detail}</span></span><ArrowRight className="mt-1 shrink-0 text-slate-600 transition group-hover:translate-x-1 group-hover:text-amber-300" size={17}/></Link>)}</div></Card></section>}
 
     <section className="mt-6 grid gap-6 xl:grid-cols-3">
-      <Card title="Upcoming items" className="xl:col-span-2"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Stat label="Next paycheck" value={money.format(payPerCheck)}/><Stat label="Bills before payday" value={money.format(billsReserve)}/><Stat label="Minimums reserved" value={money.format(minimumReservePerCheck)}/><Stat label="Safe after cushion" value={money.format(safeExtra)}/></div><div className="mt-5 flex flex-wrap gap-3"><Link href="/bills" className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300">View bills</Link><Link href="/transactions" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300">Review transactions</Link><Link href="/paychecks" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300">Update paycheck</Link></div></Card>
+      <Card title="Upcoming items" className="xl:col-span-2"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Stat label="Next paycheck" value={money.format(payPerCheck)}/><Stat label="Bills before payday" value={money.format(billsReserve)}/><Stat label="Minimums reserved" value={money.format(minimumReservePerCheck)}/><Stat label="Safe after cushion" value={money.format(safeExtra)}/></div>{billsDueSoon.length > 0 && <div className="mt-5 space-y-2">{billsDueSoon.slice(0,4).map(bill => <div key={`${bill.id}-${bill.dueDay}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 p-3"><div><p className="text-sm font-medium">{bill.name}</p><p className="text-xs text-slate-500">{money.format(bill.amount)} · due day {bill.dueDay}</p></div><button onClick={() => markBillPaid(bill.id)} className="rounded-lg border border-cyan-400/30 px-3 py-2 text-xs font-semibold text-cyan-300">Mark Paid</button></div>)}</div>}<div className="mt-5 flex flex-wrap gap-3"><Link href="/bills" className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300">View bills</Link><Link href="/transactions" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300">Review transactions</Link><Link href="/paychecks" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300">Update paycheck</Link></div></Card>
 
       <Card title="Pilot recommendation">
         <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-300">{pilot.category === 'goal' ? <Target size={14}/> : pilot.category === 'debt' ? <CreditCard size={14}/> : <WalletCards size={14}/>} {pilot.category === 'none' ? 'No extra action' : pilot.category}</div>
