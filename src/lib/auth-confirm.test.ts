@@ -13,6 +13,12 @@ describe('cross-device email confirmation', () => {
     await expect(verifyEmailToken({ verifyOtp }, 'valid-hash', 'email')).resolves.toBe(true);
   });
 
+  it('supports cross-device email change confirmation without browser storage', async () => {
+    const verifyOtp = vi.fn().mockResolvedValue({ error: null });
+    await expect(verifyEmailToken({ verifyOtp }, 'email-change-hash', 'email_change')).resolves.toBe(true);
+    expect(verifyOtp).toHaveBeenCalledWith({ token_hash: 'email-change-hash', type: 'email_change' });
+  });
+
   it('rejects an expired or invalid token', async () => {
     const verifyOtp = vi.fn().mockResolvedValue({ error: new Error('expired') });
     await expect(verifyEmailToken({ verifyOtp }, 'expired-hash', 'email')).resolves.toBe(false);

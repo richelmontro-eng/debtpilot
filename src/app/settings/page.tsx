@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase';
 import InfoTooltip from '@/components/info-tooltip';
 import { PasswordFields } from '@/components/password-fields';
 import { isReauthenticationError, mapPasswordError, validateNewPassword } from '@/lib/password-management';
+import { getSignOutScope, mapEmailChangeError, mapSensitiveActionError, requiresReauthentication, validateEmailChange } from '@/lib/account-security';
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 type Strategy = 'avalanche' | 'snowball';
@@ -29,6 +30,14 @@ export default function SettingsPage() {
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState('');
   const [needsRecovery, setNeedsRecovery] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [sessionActive, setSessionActive] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [confirmEmail, setConfirmEmail] = useState('');
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailMessage, setEmailMessage] = useState('');
+  const [emailNeedsReauth, setEmailNeedsReauth] = useState(false);
+  const [signOutBusy, setSignOutBusy] = useState<'local' | 'global' | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -38,6 +47,9 @@ export default function SettingsPage() {
       if (userError || !user) { window.location.assign('/login'); return; }
       setUserId(user.id);
       setEmail(user.email ?? '');
+      setEmailVerified(Boolean(user.email_confirmed_at));
+      const { data: { session } } = await supabase.auth.getSession();
+      setSessionActive(Boolean(session));
       const { data, error } = await supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
       if (error) setMessage(`Load failed: ${error.message}`);
       if (data) {
@@ -70,9 +82,34 @@ export default function SettingsPage() {
   }
 
   async function signOut() {
+    if (signOutBusy) return;
+    setSignOutBusy('local');
     const supabase = createClient();
-    if (supabase) await supabase.auth.signOut({ scope: 'local' });
+    if (supabase) await supabase.auth.signOut({ scope: getSignOutScope(false) });
     window.location.assign('/login');
+  }
+
+  async function signOutAll() {
+    if (signOutBusy || !window.confirm('Sign out every device currently using your DebtPilot account?')) return;
+    setSignOutBusy('global');
+    const supabase = createClient();
+    if (supabase) { try { await supabase.auth.signOut({ scope: getSignOutScope(true) }); } catch { /* Redirect safely without exposing provider details. */ } }
+    window.location.assign('/login?global_signout=1');
+  }
+
+  async function changeEmail(event: React.FormEvent) {
+    event.preventDefault(); if (emailBusy) return;
+    const validation = validateEmailChange(email, newEmail, confirmEmail);
+    if (validation) return setEmailMessage(validation);
+    const supabase = createClient();
+    if (!supabase) return setEmailMessage('We couldn’t start your email change. Please try again.');
+    setEmailBusy(true); setEmailMessage(''); setEmailNeedsReauth(false);
+    try {
+      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() }, { emailRedirectTo: `${window.location.origin}/auth/confirm?next=/settings` });
+      if (error) { setEmailMessage(mapEmailChangeError(error)); setEmailNeedsReauth(requiresReauthentication(error)); }
+      else { setNewEmail(''); setConfirmEmail(''); setEmailMessage('Verification emails have been sent. Your email change is not complete until it is verified.'); }
+    } catch { setEmailMessage('We couldn’t start your email change. Please try again.'); }
+    setEmailBusy(false);
   }
 
   async function updatePassword(event: React.FormEvent) {
@@ -100,7 +137,7 @@ export default function SettingsPage() {
     setMessage('Deleting your account…');
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) {
-      setMessage('Your session has expired. Sign in again before deleting your account.');
+      setMessage('Please verify your identity before continuing.');
       setDeleting(false);
       return;
     }
@@ -115,11 +152,11 @@ export default function SettingsPage() {
         body: JSON.stringify({ confirmation: deleteConfirmation.trim() }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? 'Account deletion failed.');
+      if (!response.ok) throw { status: response.status, code: result.code };
       await supabase.auth.signOut({ scope: 'local' });
       window.location.assign('/login?account_deleted=1');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Account deletion failed.');
+      setMessage(mapSensitiveActionError(error as { status?: number; code?: string; message?: string }));
       setDeleting(false);
     }
   }
@@ -130,12 +167,14 @@ export default function SettingsPage() {
 
   return <main className="min-h-screen bg-slate-950 text-slate-100"><div className="mx-auto max-w-5xl px-5 py-8">
     <header className="mb-8"><div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300"><Settings size={16}/> Settings</div><h1 className="text-4xl font-semibold">Your financial preferences.</h1><p className="mt-3 text-slate-400">These defaults are used across the dashboard, recommendations, payoff planner, forecast, and What-If Lab.</p></header>
-    {message && <p role="status" className="mb-6 rounded-xl border border-slate-700 bg-slate-900 p-4 text-sm text-slate-300">{message}</p>}
+    {message && <div className="mb-6 rounded-xl border border-slate-700 bg-slate-900 p-4 text-sm text-slate-300"><p role="status">{message}</p>{message === 'Please verify your identity before continuing.' && <div className="mt-3 flex gap-4"><Link href="/forgot-password" className="font-semibold text-cyan-300">Recover password</Link><Link href="/login?next=/settings" className="font-semibold text-cyan-300">Sign in again</Link></div>}</div>}
     <section className="grid gap-6 lg:grid-cols-2">
       <Card title="Profile"><Field label="Display name"><input className="field mt-1 w-full" value={displayName} onChange={e => setDisplayName(e.target.value)}/></Field><Field label="Email"><input className="field mt-1 w-full opacity-70" value={email} disabled/></Field></Card>
       <Card title="Paycheck preferences"><Field label={<InfoTooltip label="Pay frequency">How often you receive regular pay. DebtPilot uses it to convert monthly bills and debt minimums into a per-paycheck reserve.</InfoTooltip>}><select className="field mt-1 w-full" value={payFrequency} onChange={e => setPayFrequency(e.target.value as PayFrequency)}><option value="weekly">Weekly — 52 checks/year</option><option value="biweekly">Every 2 weeks — 26/year</option><option value="semimonthly">Twice monthly — 24/year</option><option value="monthly">Monthly — 12/year</option></select></Field><NumberField label={<InfoTooltip label="Living reserve per check">Money protected for groceries, fuel, and everyday spending until your next paycheck. DebtPilot subtracts it before suggesting extra payments.</InfoTooltip>} value={livingReserve} onChange={setLivingReserve}/></Card>
       <Card title="Financial guardrails"><NumberField label={<InfoTooltip label="Protected checking cushion">The minimum balance you want left in checking after planned expenses. DebtPilot protects this amount before recommending optional debt or goal payments.</InfoTooltip>} value={cushion} onChange={setCushion}/><Field label="Debt payoff strategy"><select className="field mt-1 w-full" value={strategy} onChange={e => setStrategy(e.target.value as Strategy)}><option value="avalanche">Avalanche — highest APR first</option><option value="snowball">Snowball — smallest balance first</option></select></Field></Card>
-      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6"><div className="mb-5 flex items-center gap-2"><LockKeyhole className="text-cyan-300" size={21}/><h2 className="text-2xl font-semibold">Account &amp; Security</h2></div><form onSubmit={updatePassword}><PasswordFields password={newPassword} confirmation={confirmPassword} onPassword={setNewPassword} onConfirmation={setConfirmPassword} disabled={passwordBusy}/>{passwordMessage && <p role="status" aria-live="polite" className="mt-4 rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">{passwordMessage}</p>}{needsRecovery && <Link href="/forgot-password" className="mt-3 block text-sm font-semibold text-cyan-300">Send me a secure reset link</Link>}<button disabled={passwordBusy} className="mt-5 w-full rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 disabled:opacity-60">{passwordBusy ? 'Updating…' : 'Update password'}</button></form></section>
+      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6"><div className="mb-5 flex items-center gap-2"><LockKeyhole className="text-cyan-300" size={21}/><h2 className="text-2xl font-semibold">Account &amp; Security</h2></div><dl className="mb-6 grid gap-3 rounded-2xl bg-slate-950 p-4 text-sm"><div><dt className="text-slate-500">Current email</dt><dd className="mt-1 break-all text-slate-200">{email}</dd></div><div><dt className="text-slate-500">Email status</dt><dd className="mt-1 text-slate-200">{emailVerified ? 'Verified' : 'Verification pending'}</dd></div><div><dt className="text-slate-500">Current session</dt><dd className="mt-1 text-slate-200">{sessionActive ? 'Active on this device' : 'Not active'}</dd></div></dl><h3 className="mb-4 text-lg font-semibold">Change password</h3><form onSubmit={updatePassword}><PasswordFields password={newPassword} confirmation={confirmPassword} onPassword={setNewPassword} onConfirmation={setConfirmPassword} disabled={passwordBusy}/>{passwordMessage && <p role="status" aria-live="polite" className="mt-4 rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">{passwordMessage}</p>}{needsRecovery && <Link href="/forgot-password" className="mt-3 block text-sm font-semibold text-cyan-300">Verify your identity with a secure reset link</Link>}<button disabled={passwordBusy} className="mt-5 w-full rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 disabled:opacity-60">{passwordBusy ? 'Updating…' : 'Update password'}</button></form></section>
+      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6"><h2 className="text-2xl font-semibold">Change Email</h2><p className="mt-2 text-sm leading-6 text-slate-400">Both addresses may need verification before Supabase completes the change.</p><form onSubmit={changeEmail} className="mt-5 space-y-4"><Field label="Current email"><input className="field mt-1 w-full opacity-70" type="email" value={email} readOnly aria-readonly="true"/></Field><Field label="New email"><input className="field mt-1 w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300" type="email" inputMode="email" autoComplete="email" required disabled={emailBusy} value={newEmail} onChange={event => setNewEmail(event.target.value)}/></Field><Field label="Confirm new email"><input className="field mt-1 w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300" type="email" inputMode="email" autoComplete="email" required disabled={emailBusy} value={confirmEmail} onChange={event => setConfirmEmail(event.target.value)}/></Field>{emailMessage && <p role="status" aria-live="polite" className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">{emailMessage}</p>}{emailNeedsReauth && <div className="flex gap-4 text-sm"><Link href="/forgot-password" className="font-semibold text-cyan-300">Recover password</Link><Link href="/login?next=/settings" className="font-semibold text-cyan-300">Sign in again</Link></div>}<button disabled={emailBusy} className="w-full rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-60">{emailBusy ? 'Sending verification…' : 'Send verification email'}</button></form></section>
+      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6"><h2 className="text-2xl font-semibold">Session controls</h2><p className="mt-2 text-sm leading-6 text-slate-400">Sign out only this browser, or revoke sessions across every device.</p><div className="mt-5 grid gap-3"><button type="button" onClick={signOut} disabled={Boolean(signOutBusy)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm text-slate-200 disabled:opacity-60"><LogOut size={17}/>{signOutBusy === 'local' ? 'Signing out…' : 'Sign out this device'}</button><button type="button" onClick={signOutAll} disabled={Boolean(signOutBusy)} className="rounded-xl border border-rose-400/30 px-4 py-3 text-sm font-semibold text-rose-300 disabled:opacity-60">{signOutBusy === 'global' ? 'Signing out all devices…' : 'Sign out all devices'}</button></div></section>
       <Card title="About DebtPilot"><p className="text-2xl font-semibold">Version 0.15.0</p><p className="mt-3 text-sm leading-6 text-slate-400">Includes the Financial Command Center, reviewed transaction posting, forecasting, goals, payoff planning, vehicle comparisons, What-If scenarios, and Pilot recommendations.</p><button onClick={signOut} className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm text-slate-300"><LogOut size={17}/>Sign out</button></Card>
     </section>
 
