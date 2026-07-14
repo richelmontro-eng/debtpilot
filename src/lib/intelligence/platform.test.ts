@@ -47,6 +47,8 @@ describe('Pilot intelligence platform', () => {
     const events = deriveFinancialEvents({ now: new Date(), cycleDays: 7, payPerCheck: 1000, bills: [], debts: [], goals: [], pulse, recommendation });
     const insights = generatePilotInsights({ checking: 0, checkingCushion: 100, safeExtra: 0, billsReserve: 0, payPerCheck: 1000, debts: [], bills: [], goals: [], recommendation, events });
     expect(insights.every(insight => insight.title && insight.summary && insight.reasoning.length && insight.confidence && insight.severity && insight.suggestedAction.label)).toBe(true);
+    expect(insights.every(insight => insight.suggestedAction.href !== '/')).toBe(true);
+    expect(insights.find(insight => insight.id === 'pilot-recommendation')?.suggestedAction.href).toBe('/#pilot-recommendation');
     expect(insights.some(insight => insight.kind === 'Recommendation')).toBe(true);
   });
 

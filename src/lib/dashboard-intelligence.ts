@@ -38,9 +38,9 @@ export function getMissingInformation(input: {
   return [
     ...(input.payPerCheck <= 0 ? [{ id: 'income', label: 'Net pay per check', detail: 'Add income so Pilot can calculate a safe plan.', href: '/settings' }] : []),
     ...(input.checkingCushion <= 0 ? [{ id: 'cushion', label: 'Protected checking cushion', detail: 'Set the cash floor Pilot must protect.', href: '/settings' }] : []),
-    ...(input.debts.length === 0 ? [{ id: 'debts', label: 'Debt accounts', detail: 'Add balances, APRs, and minimums to unlock payoff guidance.', href: '#debts' }] : []),
-    ...(input.bills.length === 0 ? [{ id: 'bills', label: 'Recurring bills', detail: 'Add bills so the timeline can reserve upcoming obligations.', href: '#bills' }] : []),
-    ...(input.bills.some(bill => !bill.dueDay || bill.dueDay < 1 || bill.dueDay > 31) ? [{ id: 'due-dates', label: 'Complete bill due dates', detail: 'Add valid due days so the timeline can place every bill correctly.', href: '#bills' }] : []),
+    ...(input.debts.length === 0 ? [{ id: 'debts', label: 'Debt accounts', detail: 'Add balances, APRs, and minimums to unlock payoff guidance.', href: '/debts' }] : []),
+    ...(input.bills.length === 0 ? [{ id: 'bills', label: 'Recurring bills', detail: 'Add bills so the timeline can reserve upcoming obligations.', href: '/bills/manage' }] : []),
+    ...(input.bills.some(bill => !bill.dueDay || bill.dueDay < 1 || bill.dueDay > 31) ? [{ id: 'due-dates', label: 'Complete bill due dates', detail: 'Add valid due days so the timeline can place every bill correctly.', href: '/bills/manage' }] : []),
     ...(!input.goals.some(goal => goal.goalType === 'emergency_fund') ? [{ id: 'emergency', label: 'Emergency-fund target', detail: 'Add a target so Pilot can balance resilience with payoff progress.', href: '/goals' }] : []),
     ...(input.goals.length === 0 ? [{ id: 'goals', label: 'Financial goals', detail: 'Add goals so safe extra cash follows your priorities.', href: '/goals' }] : []),
   ];
