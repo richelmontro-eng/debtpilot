@@ -41,7 +41,7 @@ export default function WhatIfPage() {
   useEffect(() => {
     const supabase = createClient();
     if (!supabase) {
-      setMessage('Supabase is not configured.');
+      setMessage('DebtPilot is temporarily unavailable. Please try again later.');
       setLoading(false);
       return;
     }
@@ -60,7 +60,7 @@ export default function WhatIfPage() {
       ]);
 
       const error = profileError || billError || debtError;
-      if (error) setMessage(`Load failed: ${error.message}`);
+      if (error) setMessage('We couldn’t load the What-If Lab. Please try again.');
 
       const savedFrequency = (profile?.pay_frequency ?? 'weekly') as PayFrequency;
       const safeFrequency = periods[savedFrequency] ? savedFrequency : 'weekly';

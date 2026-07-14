@@ -141,3 +141,4 @@ create index if not exists goals_user_id_idx on public.goals(user_id);
 create index if not exists vehicle_scenarios_user_id_idx on public.vehicle_scenarios(user_id);
 create index if not exists financial_snapshots_user_id_snapshot_date_idx on public.financial_snapshots(user_id, snapshot_date);
 create index if not exists pilot_recommendation_history_user_completed_idx on public.pilot_recommendation_history(user_id, completed_at desc);
+create unique index if not exists pilot_recommendation_history_user_recommendation_uidx on public.pilot_recommendation_history(user_id, recommendation_id);

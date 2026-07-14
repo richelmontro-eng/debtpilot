@@ -18,7 +18,7 @@ export default function ForecastPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    if (!supabase) { setMessage('Supabase is not configured.'); setLoading(false); return; }
+    if (!supabase) { setMessage('DebtPilot is temporarily unavailable. Please try again later.'); setLoading(false); return; }
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.assign('/login'); return; }
@@ -27,7 +27,7 @@ export default function ForecastPage() {
         supabase.from('bills').select('*').eq('user_id', user.id).order('due_day'),
       ]);
       const error = profileError || billError;
-      if (error) setMessage(`Load failed: ${error.message}`);
+      if (error) setMessage('We couldn’t load your forecast. Please try again.');
       const frequency = ['weekly', 'biweekly', 'semimonthly', 'monthly'].includes(savedProfile?.pay_frequency) ? savedProfile.pay_frequency as ForecastFrequency : 'weekly';
       setProfile({
         checking: Number(savedProfile?.checking_balance ?? 0),

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase';
+import { logTechnicalError, safeAuthMessage } from '@/lib/safe-errors';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -43,7 +44,8 @@ export default function LoginPage() {
     setBusy(false);
 
     if (result.error) {
-      setMessage(result.error.message);
+      logTechnicalError('sign in or sign up', result.error);
+      setMessage(mode === 'login' ? safeAuthMessage(result.error) : 'We couldn’t create your account. Check your details and try again.');
       return;
     }
 

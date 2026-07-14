@@ -46,7 +46,7 @@ export default function InsightsPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    if (!supabase) { setMessage('Supabase is not configured.'); setLoading(false); return; }
+    if (!supabase) { setMessage('DebtPilot is temporarily unavailable. Please try again later.'); setLoading(false); return; }
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.assign('/login'); return; }
@@ -58,7 +58,7 @@ export default function InsightsPage() {
         supabase.from('financial_snapshots').select('*').eq('user_id', user.id).order('snapshot_date', { ascending: true }),
       ]);
       const error = pe || de || ge || se;
-      if (error) setMessage(`Load failed: ${error.message}`);
+      if (error) setMessage('We couldn’t load your financial insights. Please try again.');
       setProfile(p);
       setInvestments(Number(p?.investment_balance ?? 0));
       setOtherAssets(Number(p?.other_assets ?? 0));
@@ -116,7 +116,7 @@ export default function InsightsPage() {
       financial_health: health,
     }, { onConflict: 'user_id,snapshot_date' });
     const error = profileError || snapshotError;
-    setMessage(error ? `Save failed: ${error.message}` : 'Snapshot saved successfully.');
+    setMessage(error ? 'We couldn’t save your financial snapshot. Please try again.' : 'Snapshot saved successfully.');
     if (!error) {
       const { data } = await supabase.from('financial_snapshots').select('*').eq('user_id', userId).order('snapshot_date', { ascending: true });
       setSnapshots((data ?? []).map(row => ({ id: row.id, snapshotDate: row.snapshot_date, totalAssets: Number(row.total_assets), totalDebt: Number(row.total_debt), netWorth: Number(row.net_worth), checking: Number(row.checking_balance), savings: Number(row.savings_balance), investments: Number(row.investment_balance), otherAssets: Number(row.other_assets), health: Number(row.financial_health) })));

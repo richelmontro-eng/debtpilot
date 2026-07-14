@@ -8,6 +8,7 @@ import InfoTooltip from '@/components/info-tooltip';
 import { PasswordFields } from '@/components/password-fields';
 import { isReauthenticationError, mapPasswordError, validateNewPassword } from '@/lib/password-management';
 import { getSignOutScope, mapEmailChangeError, mapSensitiveActionError, requiresReauthentication, validateEmailChange } from '@/lib/account-security';
+import { APP_VERSION } from '@/lib/version';
 
 type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 type Strategy = 'avalanche' | 'snowball';
@@ -51,7 +52,7 @@ export default function SettingsPage() {
       const { data: { session } } = await supabase.auth.getSession();
       setSessionActive(Boolean(session));
       const { data, error } = await supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
-      if (error) setMessage(`Load failed: ${error.message}`);
+      if (error) setMessage('We couldn’t load all settings. Please try again.');
       if (data) {
         setDisplayName(data.display_name ?? '');
         setPayFrequency((data.pay_frequency ?? 'weekly') as PayFrequency);
@@ -77,7 +78,7 @@ export default function SettingsPage() {
       weekly_living_reserve: Math.max(0, livingReserve),
       updated_at: new Date().toISOString(),
     });
-    setMessage(error ? `Save failed: ${error.message}` : 'Settings saved successfully.');
+    setMessage(error ? 'We couldn’t save your settings. Please try again.' : 'Settings saved successfully.');
     setSaving(false);
   }
 
@@ -175,7 +176,7 @@ export default function SettingsPage() {
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6"><div className="mb-5 flex items-center gap-2"><LockKeyhole className="text-cyan-300" size={21}/><h2 className="text-2xl font-semibold">Account &amp; Security</h2></div><dl className="mb-6 grid gap-3 rounded-2xl bg-slate-950 p-4 text-sm"><div><dt className="text-slate-500">Current email</dt><dd className="mt-1 break-all text-slate-200">{email}</dd></div><div><dt className="text-slate-500">Email status</dt><dd className="mt-1 text-slate-200">{emailVerified ? 'Verified' : 'Verification pending'}</dd></div><div><dt className="text-slate-500">Current session</dt><dd className="mt-1 text-slate-200">{sessionActive ? 'Active on this device' : 'Not active'}</dd></div></dl><h3 className="mb-4 text-lg font-semibold">Change password</h3><form onSubmit={updatePassword}><PasswordFields password={newPassword} confirmation={confirmPassword} onPassword={setNewPassword} onConfirmation={setConfirmPassword} disabled={passwordBusy}/>{passwordMessage && <p role="status" aria-live="polite" className="mt-4 rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">{passwordMessage}</p>}{needsRecovery && <Link href="/forgot-password" className="mt-3 block text-sm font-semibold text-cyan-300">Verify your identity with a secure reset link</Link>}<button disabled={passwordBusy} className="mt-5 w-full rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 disabled:opacity-60">{passwordBusy ? 'Updating…' : 'Update password'}</button></form></section>
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6"><h2 className="text-2xl font-semibold">Change Email</h2><p className="mt-2 text-sm leading-6 text-slate-400">Both addresses may need verification before Supabase completes the change.</p><form onSubmit={changeEmail} className="mt-5 space-y-4"><Field label="Current email"><input className="field mt-1 w-full opacity-70" type="email" value={email} readOnly aria-readonly="true"/></Field><Field label="New email"><input className="field mt-1 w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300" type="email" inputMode="email" autoComplete="email" required disabled={emailBusy} value={newEmail} onChange={event => setNewEmail(event.target.value)}/></Field><Field label="Confirm new email"><input className="field mt-1 w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300" type="email" inputMode="email" autoComplete="email" required disabled={emailBusy} value={confirmEmail} onChange={event => setConfirmEmail(event.target.value)}/></Field>{emailMessage && <p role="status" aria-live="polite" className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">{emailMessage}</p>}{emailNeedsReauth && <div className="flex gap-4 text-sm"><Link href="/forgot-password" className="font-semibold text-cyan-300">Recover password</Link><Link href="/login?next=/settings" className="font-semibold text-cyan-300">Sign in again</Link></div>}<button disabled={emailBusy} className="w-full rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-60">{emailBusy ? 'Sending verification…' : 'Send verification email'}</button></form></section>
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6"><h2 className="text-2xl font-semibold">Session controls</h2><p className="mt-2 text-sm leading-6 text-slate-400">Sign out only this browser, or revoke sessions across every device.</p><div className="mt-5 grid gap-3"><button type="button" onClick={signOut} disabled={Boolean(signOutBusy)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm text-slate-200 disabled:opacity-60"><LogOut size={17}/>{signOutBusy === 'local' ? 'Signing out…' : 'Sign out this device'}</button><button type="button" onClick={signOutAll} disabled={Boolean(signOutBusy)} className="rounded-xl border border-rose-400/30 px-4 py-3 text-sm font-semibold text-rose-300 disabled:opacity-60">{signOutBusy === 'global' ? 'Signing out all devices…' : 'Sign out all devices'}</button></div></section>
-      <Card title="About DebtPilot"><p className="text-2xl font-semibold">Version 0.15.0</p><p className="mt-3 text-sm leading-6 text-slate-400">Includes the Financial Command Center, reviewed transaction posting, forecasting, goals, payoff planning, vehicle comparisons, What-If scenarios, and Pilot recommendations.</p><button onClick={signOut} className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-sm text-slate-300"><LogOut size={17}/>Sign out</button></Card>
+      <Card title="About DebtPilot"><p className="text-2xl font-semibold">Version {APP_VERSION}</p><p className="mt-3 text-sm leading-6 text-slate-400">Includes the Financial Command Center, reviewed transaction posting, forecasting, goals, payoff planning, vehicle comparisons, What-If scenarios, and Pilot recommendations.</p></Card>
     </section>
 
     <section className="mt-6 rounded-3xl border border-rose-400/25 bg-rose-400/5 p-6">

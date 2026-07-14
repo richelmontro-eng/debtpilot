@@ -47,7 +47,7 @@ export default function PilotPage() {
   useEffect(() => {
     const supabase = createClient();
     if (!supabase) {
-      setMessage('Supabase is not configured.');
+      setMessage('DebtPilot is temporarily unavailable. Please try again later.');
       setLoading(false);
       return;
     }
@@ -68,7 +68,7 @@ export default function PilotPage() {
       ]);
 
       const error = pe || de || be || ge || se;
-      if (error) setMessage(`Load failed: ${error.message}`);
+      if (error) setMessage('We couldn’t load Pilot insights. Please try again.');
       setProfile(p);
       setDebts((d ?? []).map(mapDebtRow));
       setBills((b ?? []).map(row => ({ id: row.id, name: row.name, amount: Number(row.amount), dueDay: Number(row.due_day ?? 1), frequency: row.frequency ?? 'monthly' })));

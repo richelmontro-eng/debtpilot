@@ -42,7 +42,8 @@ export async function POST(request: Request) {
   const { error: deleteError } = await adminClient.auth.admin.deleteUser(user.id);
 
   if (deleteError) {
-    return NextResponse.json({ error: `Account deletion failed: ${deleteError.message}` }, { status: 500 });
+    if (process.env.NODE_ENV !== 'production') console.error('[DebtPilot account deletion]', { code: deleteError.code, message: deleteError.message });
+    return NextResponse.json({ error: 'We couldn’t delete your account. Please try again.' }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });

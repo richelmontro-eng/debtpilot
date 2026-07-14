@@ -20,7 +20,7 @@ export default function PayoffPage() {
   useEffect(() => {
     const supabase = createClient();
     if (!supabase) {
-      setMessage('Supabase is not configured.');
+      setMessage('DebtPilot is temporarily unavailable. Please try again later.');
       setLoading(false);
       return;
     }
@@ -37,7 +37,7 @@ export default function PayoffPage() {
         supabase.from('debts').select('*').eq('user_id', user.id).order('created_at'),
       ]);
 
-      if (error) setMessage(`Load failed: ${error.message}`);
+      if (error) setMessage('We couldn’t load your payoff plan. Please try again.');
       setStrategy(profile?.preferred_strategy === 'snowball' ? 'snowball' : 'avalanche');
       setDebts((debtRows ?? []).map(mapDebtRow));
       setLoading(false);

@@ -25,13 +25,13 @@ export default function GoalsPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    if (!supabase) { setMessage('Supabase is not configured.'); setLoading(false); return; }
+    if (!supabase) { setMessage('DebtPilot is temporarily unavailable. Please try again later.'); setLoading(false); return; }
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.assign('/login'); return; }
       setUserId(user.id);
       const { data, error } = await supabase.from('goals').select('*').eq('user_id', user.id).order('priority').order('created_at');
-      if (error) setMessage(`Load failed: ${error.message}`);
+      if (error) setMessage('We couldn’t load your goals. Please try again.');
       setGoals((data ?? []).map(row => ({
         id: row.id,
         name: row.name,
@@ -83,7 +83,7 @@ export default function GoalsPage() {
       updated_at: new Date().toISOString(),
     }))) : { error: null };
     const error = deleteError || insertError;
-    setMessage(error ? `Save failed: ${error.message}` : 'Goals saved successfully.');
+    setMessage(error ? 'We couldn’t save your goals. Please try again.' : 'Goals saved successfully.');
     setSaving(false);
   }
 

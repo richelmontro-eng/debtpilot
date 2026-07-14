@@ -45,7 +45,7 @@ export default function FinancialInboxPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    if (!supabase) { setMessage('Supabase is not configured.'); setLoading(false); return; }
+    if (!supabase) { setMessage('DebtPilot is temporarily unavailable. Please try again later.'); setLoading(false); return; }
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.assign('/login'); return; }
@@ -56,7 +56,7 @@ export default function FinancialInboxPage() {
         supabase.from('goals').select('*').eq('user_id', user.id),
       ]);
       const error = pe || de || be || ge;
-      if (error) setMessage(`Load failed: ${error.message}`);
+      if (error) setMessage('We couldn’t load your financial inbox. Please try again.');
       setProfile(p);
       setDebts((d ?? []).map(row => ({ id: row.id, name: row.name, balance: Number(row.balance), apr: Number(row.apr), minimum: Number(row.minimum_payment) })));
       setBills((b ?? []).map(row => ({ id: row.id, name: row.name, amount: Number(row.amount), dueDay: Number(row.due_day ?? 1), frequency: row.frequency ?? 'monthly' })));

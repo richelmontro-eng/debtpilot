@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowRight, CalendarDays, CheckCircle2, Clock3, CreditCard, Gauge, Info, ListChecks, LogOut, Plus, Save, Target, Trash2, Trophy, WalletCards } from 'lucide-react';
+import { ArrowRight, CalendarDays, CheckCircle2, Clock3, CreditCard, Gauge, Info, ListChecks, Plus, Save, Target, Trash2, Trophy, WalletCards } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { getRecommendationId, type CompletedRecommendation, type PilotCategory } from '@/lib/pilot';
 import { buildCommandCenter, getSafeDashboardError } from '@/lib/intelligence';
@@ -303,18 +303,12 @@ export default function Home() {
     setSaving(false);
   }
 
-  async function signOut() {
-    const supabase = createClient();
-    if (supabase) await supabase.auth.signOut({ scope: 'local' });
-    window.location.assign('/login');
-  }
-
   if (loading) return <main className="grid min-h-screen place-items-center bg-slate-950 text-slate-100">Loading DebtPilot…</main>;
 
   return <main className="min-h-screen bg-slate-950 text-slate-100"><div className="mx-auto max-w-7xl px-5 py-8">
     <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div><div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300"><Gauge size={16}/> Paycheck financial command center</div><h1 className="text-4xl font-semibold">DebtPilot</h1><p className="mt-2 text-slate-400">Cover the next pay cycle, protect your safety buffers, then fund the highest-value priority.</p></div>
-      <div className="flex gap-3"><button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-60"><Save size={18}/>{saving ? 'Saving…' : 'Save plan'}</button><button onClick={signOut} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-3 text-slate-300"><LogOut size={18}/>Sign out</button></div>
+      <button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-60"><Save size={18}/>{saving ? 'Saving…' : 'Save plan'}</button>
     </header>
 
     {notice && <div role="status" aria-live="polite" className="mb-5 flex flex-col gap-3 rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm text-slate-300 sm:flex-row sm:items-center sm:justify-between"><p>{notice}</p>{loadFailed && <button type="button" onClick={() => window.location.reload()} className="rounded-lg border border-cyan-400/30 px-3 py-2 font-medium text-cyan-300 outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Retry briefing</button>}</div>}

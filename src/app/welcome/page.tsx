@@ -69,7 +69,7 @@ export default function WelcomePage() {
 
   useEffect(() => {
     const supabase = createClient();
-    if (!supabase) { setMessage('Supabase is not configured.'); setLoading(false); return; }
+    if (!supabase) { setMessage('DebtPilot is temporarily unavailable. Please try again later.'); setLoading(false); return; }
     void (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.replace('/login'); return; }
@@ -151,10 +151,20 @@ export default function WelcomePage() {
     const refreshedDebts = debtResult.debts;
     setDraft(current => ({ ...current, debts: refreshedDebts, bills: refreshedBills }));
     if (debtResult.warning && process.env.NODE_ENV !== 'production') console.warn('[DebtPilot onboarding]', { context: 'post-write debt maintenance', warning: debtResult.warning });
-    const { error: goalResetError } = await supabase.from('goals').delete().eq('user_id', userId);
-    let error = goalResetError;
-    if (error) logOnboardingOperation('reset goals after debts and bills saved', error);
-    if (!error && draft.goals.length) ({ error } = await supabase.from('goals').insert(draft.goals.map(goal => ({ user_id: userId, name: goal.name, goal_type: goal.goalType, target_amount: Math.max(0, goal.targetAmount), current_amount: Math.max(0, goal.currentAmount), priority: goal.priority }))));
+    let error = null as { code?: string; message?: string; details?: string; hint?: string } | null;
+    let completionErrorMessage = '';
+    for (const goal of draft.goals) {
+      const result = await supabase.from('goals').upsert({ id: goal.id, user_id: userId, name: goal.name, goal_type: goal.goalType, target_amount: Math.max(0, goal.targetAmount), current_amount: Math.max(0, goal.currentAmount), priority: goal.priority }, { onConflict: 'id' });
+      if (result.error) { error = result.error; logOnboardingOperation(`save goal ${goal.name || goal.id}`, result.error); completionErrorMessage = `We couldn’t save the goal “${goal.name || 'Untitled goal'}”. Your other setup data is safe; please try again.`; break; }
+    }
+    if (!error) {
+      const { data: existingGoals, error: goalReadError } = await supabase.from('goals').select('id').eq('user_id', userId);
+      error = goalReadError;
+      const desiredIds = new Set(draft.goals.map(goal => goal.id));
+      const removedIds = (existingGoals ?? []).map(goal => goal.id as string).filter(id => !desiredIds.has(id));
+      if (!error && removedIds.length) ({ error } = await supabase.from('goals').delete().eq('user_id', userId).in('id', removedIds));
+      if (error) logOnboardingOperation('remove goals deleted during onboarding', error);
+    }
     if (!error) {
       const profileResult = await supabase.from('profiles').update({ onboarding_completed: true, onboarding_step: 5, onboarding_data: { ...draft, debts: refreshedDebts, bills: refreshedBills }, updated_at: new Date().toISOString() }).eq('user_id', userId);
       error = profileResult.error;
@@ -162,7 +172,7 @@ export default function WelcomePage() {
     }
     setSaving(false);
     if (error) {
-      setMessage("Your bills were saved, but we couldn't update your onboarding progress. Please try again.");
+      setMessage(completionErrorMessage || "Your setup data is safe, but we couldn't finish onboarding. Please try again.");
       return;
     }
     if (process.env.NODE_ENV !== 'production') console.info('[DebtPilot onboarding]', { context: 'bill reload and onboarding updates complete; navigating to dashboard' });

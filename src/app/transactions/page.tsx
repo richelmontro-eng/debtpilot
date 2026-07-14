@@ -72,7 +72,7 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    if (!supabase) { setMessage('Supabase is not configured.'); setLoading(false); return; }
+    if (!supabase) { setMessage('DebtPilot is temporarily unavailable. Please try again later.'); setLoading(false); return; }
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.assign('/login'); return; }
@@ -82,7 +82,7 @@ export default function TransactionsPage() {
         supabase.from('debts').select('id, name, balance').eq('user_id', user.id).gt('balance', 0).order('apr', { ascending: false }),
       ]);
       const error = txError || debtError;
-      if (error) setMessage(`Load failed: ${error.message}`);
+      if (error) setMessage('We couldn’t load your transactions. Please try again.');
       setTransactions((tx ?? []).map(mapTransaction));
       setDebts((debtRows ?? []).map(row => ({ id: row.id, name: row.name, balance: Number(row.balance) })));
       setLoading(false);
@@ -122,7 +122,7 @@ export default function TransactionsPage() {
       notes: form.notes.trim() || null,
       updated_at: new Date().toISOString(),
     }).select('*').single();
-    if (error) setMessage(`Save failed: ${error.message}`);
+    if (error) setMessage('We couldn’t save this transaction. Please try again.');
     else {
       setTransactions(items => [mapTransaction(data), ...items]);
       setForm(current => ({ ...current, description: '', amount: 0, notes: '' }));
@@ -142,7 +142,7 @@ export default function TransactionsPage() {
     setPostingId(transaction.id);
     setMessage('Posting transaction…');
     const { error } = await supabase.rpc('post_transaction', { p_transaction_id: transaction.id, p_debt_id: debtId });
-    if (error) setMessage(`Post failed: ${error.message}`);
+    if (error) setMessage('We couldn’t post this transaction. No balances were changed; please try again.');
     else {
       setTransactions(items => items.map(item => item.id === transaction.id ? { ...item, postedAt: new Date().toISOString(), debtId } : item));
       setMessage('Transaction posted successfully. Your saved balances have been updated.');
@@ -156,7 +156,7 @@ export default function TransactionsPage() {
     const supabase = createClient();
     if (!supabase) return;
     const { error } = await supabase.from('transactions').delete().eq('id', id).eq('user_id', userId);
-    if (error) setMessage(`Delete failed: ${error.message}`);
+    if (error) setMessage('We couldn’t delete this transaction. Please try again.');
     else { setTransactions(items => items.filter(item => item.id !== id)); setMessage('Transaction removed.'); }
   }
 

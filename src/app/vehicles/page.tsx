@@ -55,7 +55,7 @@ export default function VehiclePlannerPage() {
   useEffect(() => {
     const supabase = createClient();
     if (!supabase) {
-      setMessage('Supabase is not configured.');
+      setMessage('DebtPilot is temporarily unavailable. Please try again later.');
       setLoading(false);
       return;
     }
@@ -81,7 +81,7 @@ export default function VehiclePlannerPage() {
       ]);
 
       const error = profileError || billError || debtError || vehicleError;
-      if (error) setMessage(`Load failed: ${error.message}`);
+      if (error) setMessage('We couldn’t load your vehicle scenarios. Please try again.');
 
       const frequency = (profile?.pay_frequency ?? 'weekly') as PayFrequency;
       const checksPerYear = periods[frequency] ?? 52;
@@ -171,7 +171,7 @@ export default function VehiclePlannerPage() {
     }).select('*').single();
 
     if (error) {
-      setMessage(`Save failed: ${error.message}`);
+      setMessage('We couldn’t save this vehicle scenario. Please try again.');
     } else if (data) {
       setSavedVehicles(items => [...items, {
         id: data.id,
@@ -197,7 +197,7 @@ export default function VehiclePlannerPage() {
     if (!supabase) return;
     const { error } = await supabase.from('vehicle_scenarios').delete().eq('id', id).eq('user_id', userId);
     if (error) {
-      setMessage(`Delete failed: ${error.message}`);
+      setMessage('We couldn’t delete this vehicle scenario. Please try again.');
       return;
     }
     setSavedVehicles(items => items.filter(item => item.id !== id));
