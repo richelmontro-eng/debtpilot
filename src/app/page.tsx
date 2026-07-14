@@ -8,7 +8,6 @@ import { createClient } from '@/lib/supabase';
 import { getRecommendationId, type CompletedRecommendation, type PilotCategory } from '@/lib/pilot';
 import { buildCommandCenter, getSafeDashboardError } from '@/lib/intelligence';
 import PilotReasoning from '@/components/pilot-reasoning';
-import { CommandCenterAction, focusCommandCenterTarget } from '@/components/command-center-action';
 import { analyzePromotion, promotionStatusLabel } from '@/lib/promotions';
 import { getSafeBillSaveMessage, logBillSaveError, validateOnboardingBill } from '@/lib/onboarding-bills';
 import { mapDebtRow, optionalNumber, saveDebts, type PersistedDebt } from '@/lib/debt-persistence';
@@ -100,6 +99,8 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [completingRecommendation, setCompletingRecommendation] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
+  const [recommendationFocusPending, setRecommendationFocusPending] = useState(false);
+  const [highlightedTarget, setHighlightedTarget] = useState<'plan' | 'recommendation' | null>(null);
   const [recommendationHistory, setRecommendationHistory] = useState<CompletedRecommendation[]>([]);
   const [recommendationHistoryUnavailable, setRecommendationHistoryUnavailable] = useState(false);
   const [displayName, setDisplayName] = useState('');
@@ -191,6 +192,21 @@ export default function Home() {
       setLoading(false);
     })();
   }, [router]);
+
+  useEffect(() => {
+    if (!recommendationFocusPending || !whyOpen) return;
+    const frame = requestAnimationFrame(() => {
+      const panel = document.getElementById('pilot-recommendation-details');
+      if (panel) {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        panel.focus({ preventScroll: true });
+        setHighlightedTarget('recommendation');
+        window.setTimeout(() => setHighlightedTarget(current => current === 'recommendation' ? null : current), 1600);
+      }
+      setRecommendationFocusPending(false);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [recommendationFocusPending, whyOpen]);
 
   const schedule = paySchedule[payFrequency];
   const billsDueSoon = useMemo(() => {
@@ -315,9 +331,18 @@ export default function Home() {
     setSaving(false);
   }
 
-  function openCommandCenterTarget(target: string) {
-    if (target === 'pilot-recommendation') setWhyOpen(true);
-    requestAnimationFrame(() => focusCommandCenterTarget(target));
+  function reviewDashboardPlan() {
+    const plan = document.getElementById('command-center-plan');
+    if (!plan) { router.push('/paychecks'); return; }
+    plan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    plan.focus({ preventScroll: true });
+    setHighlightedTarget('plan');
+    window.setTimeout(() => setHighlightedTarget(current => current === 'plan' ? null : current), 1600);
+  }
+
+  function reviewRecommendation() {
+    setWhyOpen(true);
+    setRecommendationFocusPending(true);
   }
 
   if (loading) return <main className="grid min-h-screen place-items-center bg-slate-950 text-slate-100">Loading DebtPilot…</main>;
@@ -337,19 +362,19 @@ export default function Home() {
       </div>
     </section>
 
-    <section className="mt-6"><Card title="Pilot insights"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{pilotInsights.map(insight => <Insight key={insight.id} icon={insight.id === 'debt' ? <CreditCard/> : insight.id === 'goal' || insight.id === 'emergency' ? <Target/> : insight.id === 'bills' ? <CalendarDays/> : <WalletCards/>} title={insight.title} detail={insight.summary} severity={insight.severity} action={insight.suggestedAction} onInPage={openCommandCenterTarget}/>)}</div></Card></section>
+    <section className="mt-6"><Card title="Pilot insights"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{pilotInsights.map(insight => <Insight key={insight.id} icon={insight.id === 'debt' ? <CreditCard/> : insight.id === 'goal' || insight.id === 'emergency' ? <Target/> : insight.id === 'bills' ? <CalendarDays/> : <WalletCards/>} title={insight.title} detail={insight.summary} severity={insight.severity} action={insight.suggestedAction} actionKind={insight.id === 'pilot-recommendation' ? 'recommendation' : insight.suggestedAction.label === 'Review dashboard plan' ? 'plan' : null} reviewPlan={reviewDashboardPlan} reviewRecommendation={reviewRecommendation}/>)}</div></Card></section>
 
     {missingInformation.length > 0 && <section className="mt-6"><Card title="Missing information"><p className="-mt-2 mb-5 text-sm leading-6 text-slate-400">Complete these details to make your briefing and Pilot recommendation more precise.</p><div className="grid gap-3 md:grid-cols-2">{missingInformation.map(item => <Link key={item.label} href={item.href} className="group flex items-start gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 transition hover:border-amber-400/40"><ListChecks className="mt-0.5 shrink-0 text-amber-300" size={19}/><span className="min-w-0 flex-1"><span className="block font-medium text-slate-200">{item.label}</span><span className="mt-1 block text-sm leading-5 text-slate-500">{item.detail}</span></span><ArrowRight className="mt-1 shrink-0 text-slate-600 transition group-hover:translate-x-1 group-hover:text-amber-300" size={17}/></Link>)}</div></Card></section>}
 
     <section className="mt-6 grid gap-6 xl:grid-cols-3">
-      <div id="financial-plan" tabIndex={-1} className="scroll-mt-24 rounded-3xl outline-none focus:ring-2 focus:ring-cyan-300 xl:col-span-2"><Card title="Upcoming items"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Stat label="Next paycheck" value={money.format(payPerCheck)}/><Stat label="Bills before payday" value={money.format(billsReserve)}/><Stat label="Minimums reserved" value={money.format(minimumReservePerCheck)}/><Stat label="Safe after cushion" value={money.format(safeExtra)}/></div>{billsDueSoon.length > 0 && <div className="mt-5 space-y-2">{billsDueSoon.slice(0,4).map(bill => <div key={`${bill.id}-${bill.dueDay}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 p-3"><div><p className="text-sm font-medium">{bill.name}</p><p className="text-xs text-slate-500">{money.format(bill.amount)} · due day {bill.dueDay}</p></div><button onClick={() => markBillPaid(bill.id)} className="rounded-lg border border-cyan-400/30 px-3 py-2 text-xs font-semibold text-cyan-300 hover:border-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-300">Mark Paid</button></div>)}</div>}<div className="mt-5 flex flex-wrap gap-3"><Link href="/bills" className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300 hover:border-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-300">View bills</Link><Link href="/transactions" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 focus-visible:ring-2 focus-visible:ring-cyan-300">Review transactions</Link><Link href="/paychecks" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 focus-visible:ring-2 focus-visible:ring-cyan-300">Update paycheck</Link></div></Card></div>
+      <div id="command-center-plan" tabIndex={-1} className={`scroll-mt-24 rounded-3xl outline-none transition duration-500 focus:ring-2 focus:ring-cyan-300 xl:col-span-2 ${highlightedTarget === 'plan' ? 'ring-4 ring-cyan-300/80 shadow-[0_0_32px_rgba(34,211,238,0.35)]' : ''}`}><Card title="Upcoming items"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Stat label="Next paycheck" value={money.format(payPerCheck)}/><Stat label="Bills before payday" value={money.format(billsReserve)}/><Stat label="Minimums reserved" value={money.format(minimumReservePerCheck)}/><Stat label="Safe after cushion" value={money.format(safeExtra)}/></div>{billsDueSoon.length > 0 && <div className="mt-5 space-y-2">{billsDueSoon.slice(0,4).map(bill => <div key={`${bill.id}-${bill.dueDay}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 p-3"><div><p className="text-sm font-medium">{bill.name}</p><p className="text-xs text-slate-500">{money.format(bill.amount)} · due day {bill.dueDay}</p></div><button onClick={() => markBillPaid(bill.id)} className="rounded-lg border border-cyan-400/30 px-3 py-2 text-xs font-semibold text-cyan-300 hover:border-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-300">Mark Paid</button></div>)}</div>}<div className="mt-5 flex flex-wrap gap-3"><Link href="/bills" className="rounded-xl border border-cyan-400/30 px-4 py-2 text-sm text-cyan-300 hover:border-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-300">View bills</Link><Link href="/transactions" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 focus-visible:ring-2 focus-visible:ring-cyan-300">Review transactions</Link><Link href="/paychecks" className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-slate-500 focus-visible:ring-2 focus-visible:ring-cyan-300">Update paycheck</Link></div></Card></div>
 
-      <div id="pilot-recommendation" tabIndex={-1} className="scroll-mt-24 rounded-3xl outline-none focus:ring-2 focus:ring-cyan-300"><Card title="Pilot recommendation">
+      <div className={`rounded-3xl transition duration-500 ${highlightedTarget === 'recommendation' ? 'ring-4 ring-cyan-300/80 shadow-[0_0_32px_rgba(34,211,238,0.35)]' : ''}`}><Card title="Pilot recommendation">
         <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-300">{pilot.category === 'goal' ? <Target size={14}/> : pilot.category === 'debt' ? <CreditCard size={14}/> : <WalletCards size={14}/>} {pilot.category === 'none' ? 'No extra action' : pilot.category}</div>
         <p className="text-2xl font-semibold">{pilot.title}</p>
         <p className="mt-4 text-sm leading-6 text-slate-400">{pilot.description}</p>
         <div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-4"><p className="text-xs uppercase tracking-widest text-cyan-300">Expected impact</p><p className="mt-1 text-xl font-semibold">{pilot.estimatedBenefit > 0 ? money.format(pilot.estimatedBenefit) : 'Cash protected'}</p></div><div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4"><p className="text-xs uppercase tracking-widest text-slate-500">Confidence</p><p className="mt-1 text-xl font-semibold">{pilot.confidence}%</p></div><div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4"><p className="text-xs uppercase tracking-widest text-slate-500">Time horizon</p><p className="mt-1 text-base font-semibold">{timeHorizon}</p></div></div>
-        <div className="mt-5 flex flex-col items-start gap-3 sm:flex-row"><div><PilotReasoning open={whyOpen} onToggle={() => setWhyOpen(open => !open)} reasoning={pilot.reasoning}/></div><button type="button" disabled={recommendationHistoryUnavailable || isRecommendationComplete || completingRecommendation} onClick={markRecommendationComplete} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-default disabled:bg-emerald-400"><CheckCircle2 size={16}/>{isRecommendationComplete ? 'Completed' : 'Mark Complete'}</button></div>
+        <div className="mt-5 flex flex-col items-start gap-3 sm:flex-row"><div><PilotReasoning panelId="pilot-recommendation-details" open={whyOpen} onToggle={() => setWhyOpen(open => !open)} reasoning={pilot.reasoning}/></div><button type="button" disabled={recommendationHistoryUnavailable || isRecommendationComplete || completingRecommendation} onClick={markRecommendationComplete} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-default disabled:bg-emerald-400"><CheckCircle2 size={16}/>{isRecommendationComplete ? 'Completed' : 'Mark Complete'}</button></div>
       </Card></div>
     </section>
 
@@ -377,7 +402,7 @@ export default function Home() {
 }
 
 function Card({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) { return <div className={`rounded-3xl border border-slate-800 bg-slate-900 p-6 ${className}`}><h2 className="mb-5 text-2xl font-semibold">{title}</h2>{children}</div>; }
-function Insight({ icon, title, detail, severity, action, onInPage }: { icon: React.ReactNode; title: string; detail: string; severity: 'info' | 'positive' | 'warning' | 'critical'; action: { label: string; href: string }; onInPage: (target: string) => void }) { const warning = severity === 'warning' || severity === 'critical'; return <article className={`rounded-2xl border bg-slate-950/40 p-5 ${warning ? 'border-amber-400/25' : severity === 'positive' ? 'border-emerald-400/20' : 'border-slate-800'}`}><div className={warning ? 'text-amber-300' : severity === 'positive' ? 'text-emerald-300' : 'text-cyan-300'}>{icon}</div><h3 className="mt-4 text-lg font-semibold leading-6">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p><CommandCenterAction label={action.label} href={action.href} onInPage={onInPage}/></article>; }
+function Insight({ icon, title, detail, severity, action, actionKind, reviewPlan, reviewRecommendation }: { icon: React.ReactNode; title: string; detail: string; severity: 'info' | 'positive' | 'warning' | 'critical'; action: { label: string; href: string }; actionKind: 'plan' | 'recommendation' | null; reviewPlan: () => void; reviewRecommendation: () => void }) { const warning = severity === 'warning' || severity === 'critical'; const actionClass = 'mt-4 inline-flex rounded-lg text-sm font-medium text-cyan-300 outline-none transition hover:text-cyan-200 focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950'; return <article className={`rounded-2xl border bg-slate-950/40 p-5 ${warning ? 'border-amber-400/25' : severity === 'positive' ? 'border-emerald-400/20' : 'border-slate-800'}`}><div className={warning ? 'text-amber-300' : severity === 'positive' ? 'text-emerald-300' : 'text-cyan-300'}>{icon}</div><h3 className="mt-4 text-lg font-semibold leading-6">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{detail}</p>{actionKind === 'plan' ? <button type="button" onClick={reviewPlan} className={actionClass}>{action.label}</button> : actionKind === 'recommendation' ? <button type="button" onClick={reviewRecommendation} className={actionClass}>{action.label}</button> : <Link href={action.href} className={actionClass}>{action.label}</Link>}</article>; }
 function Stat({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-medium">{value}</p></div>; }
 function Empty({ text }: { text: string }) { return <p className="rounded-xl border border-dashed border-slate-700 p-4 text-sm leading-6 text-slate-500">{text}</p>; }
 function HelpLabel({ label, help }: { label: string; help: string }) { return <span className="flex items-center gap-1.5"><span>{label}</span><span className="group relative inline-flex"><button type="button" aria-label={`About ${label}`} className="rounded-full text-slate-500 outline-none transition hover:text-cyan-300 focus-visible:text-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-300"><Info size={14}/></button><span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-950 p-3 text-left text-xs leading-5 text-slate-300 shadow-xl group-hover:block group-focus-within:block">{help}</span></span></span>; }
