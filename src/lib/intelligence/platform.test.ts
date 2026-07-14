@@ -38,6 +38,11 @@ describe('Pilot intelligence platform', () => {
     }));
   });
 
+  it('adds goal contributions to the timeline', () => {
+    const events = deriveFinancialEvents({ now: new Date('2026-07-12T12:00:00'), cycleDays: 7, payPerCheck: 1000, bills: [], debts: [], goals: [], pulse, recommendation, goalContributions: [{ id: 'contribution-1', goalId: 'goal-1', name: 'Emergency Fund', amount: 125, contributedOn: '2026-07-12', createdAt: '2026-07-12T10:00:00Z' }] });
+    expect(events).toContainEqual(expect.objectContaining({ id: 'goal-contribution-contribution-1', type: 'goal', title: 'Emergency Fund contribution', amount: 125, status: 'posted' }));
+  });
+
   it('creates complete deterministic insight records', () => {
     const events = deriveFinancialEvents({ now: new Date(), cycleDays: 7, payPerCheck: 1000, bills: [], debts: [], goals: [], pulse, recommendation });
     const insights = generatePilotInsights({ checking: 0, checkingCushion: 100, safeExtra: 0, billsReserve: 0, payPerCheck: 1000, debts: [], bills: [], goals: [], recommendation, events });

@@ -32,6 +32,7 @@ export function deriveFinancialEvents(input: {
   recommendationHistory?: CompletedRecommendation[];
   purchaseAnalyses?: Array<{ id: string; itemName: string; decision: string; purchasePrice: number; analyzedAt: string }>;
   billOccurrences?: Array<{ id:string; billId:string; name:string; paidAt:string|null; paidAmount:number|null; status:string }>;
+  goalContributions?: Array<{ id: string; goalId: string; name: string; amount: number; contributedOn: string; createdAt: string }>;
 }): FinancialEvent[] {
   const events: FinancialEvent[] = [];
   if (input.payPerCheck > 0) {
@@ -54,6 +55,9 @@ export function deriveFinancialEvents(input: {
   }
   for (const goal of input.goals.filter(item => item.targetAmount > 0 && item.currentAmount >= item.targetAmount)) {
     events.push({ id: `goal-${goal.id}`, type: 'goal', occurredAt: startOfDay(input.now).toISOString(), status: 'completed', title: `${goal.name} target reached`, summary: 'Saved goal progress reached the target.', amount: goal.currentAmount, direction: 'neutral', sourceId: goal.id });
+  }
+  for (const contribution of input.goalContributions ?? []) {
+    events.push({ id: `goal-contribution-${contribution.id}`, type: 'goal', occurredAt: contribution.createdAt || `${contribution.contributedOn}T12:00:00`, status: 'posted', title: `${contribution.name} contribution`, summary: 'Goal progress increased.', amount: contribution.amount, direction: 'outflow', sourceId: contribution.goalId });
   }
   events.push({ id: 'health-current', type: 'financial_health', occurredAt: startOfDay(input.now).toISOString(), status: 'posted', title: `Financial health: ${input.pulse.label}`, summary: `Current deterministic health score is ${input.pulse.score}/100.`, direction: 'neutral', metadata: { score: input.pulse.score } });
   events.push({ id: 'recommendation-current', type: 'recommendation', occurredAt: startOfDay(input.now).toISOString(), status: 'projected', title: input.recommendation.title, summary: input.recommendation.description, amount: input.recommendation.action.amount || undefined, direction: input.recommendation.action.amount ? 'outflow' : 'neutral', metadata: { confidence: input.recommendation.confidence, category: input.recommendation.category } });

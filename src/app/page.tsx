@@ -112,6 +112,7 @@ export default function Home() {
   const [debts, setDebts] = useState<Debt[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [billOccurrences, setBillOccurrences] = useState<BillOccurrence[]>([]);
+  const [goalContributions, setGoalContributions] = useState<Array<{ id: string; goalId: string; amount: number; contributedOn: string; createdAt: string }>>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
 
   useEffect(() => {
@@ -173,6 +174,8 @@ export default function Home() {
       if (drafts.length) await supabase.from('bill_occurrences').upsert(drafts.map(draft => ({ user_id: draft.userId, bill_id: draft.billId, due_date: draft.dueDate, expected_amount: draft.expectedAmount, status: draft.status })), { onConflict: 'user_id,bill_id,due_date', ignoreDuplicates: true });
       const occurrenceResult = await supabase.from('bill_occurrences').select('*').eq('user_id', user.id).order('due_date');
       if (!occurrenceResult.error) setBillOccurrences((occurrenceResult.data ?? []).map(row => ({ id: row.id, userId: row.user_id, billId: row.bill_id, dueDate: row.due_date, expectedAmount: Number(row.expected_amount), status: row.status, paidAt: row.paid_at, paidAmount: row.paid_amount == null ? null : Number(row.paid_amount), transactionId: row.transaction_id })));
+      const contributionResult = await supabase.from('goal_contributions').select('*').eq('user_id', user.id).order('contributed_on', { ascending: false });
+      if (!contributionResult.error) setGoalContributions((contributionResult.data ?? []).map(row => ({ id: row.id, goalId: row.goal_id, amount: Number(row.amount), contributedOn: row.contributed_on, createdAt: row.created_at })));
       setGoals((goalResult.data ?? []).map(row => ({ id: row.id, name: row.name, goalType: row.goal_type, targetAmount: Number(row.target_amount), currentAmount: Number(row.current_amount), priority: Number(row.priority) })));
       setRecommendationHistory((historyResult.data ?? []).map(row => ({
         id: row.id,
@@ -224,7 +227,7 @@ export default function Home() {
     })),
     payPeriodsPerYear: schedule.periods,
   };
-  const commandCenter = buildCommandCenter({ now: new Date(), cycleDays: schedule.cycleDays, financialState, checking, checkingCushion, billsReserve, debts, bills: intelligenceBills, goals, recommendationHistory, billOccurrences: billOccurrences.map(item => ({ id:item.id, billId:item.billId, name:bills.find(bill=>bill.id===item.billId)?.name??'Bill', paidAt:item.paidAt, paidAmount:item.paidAmount, status:item.status })) });
+  const commandCenter = buildCommandCenter({ now: new Date(), cycleDays: schedule.cycleDays, financialState, checking, checkingCushion, billsReserve, debts, bills: intelligenceBills, goals, recommendationHistory, billOccurrences: billOccurrences.map(item => ({ id:item.id, billId:item.billId, name:bills.find(bill=>bill.id===item.billId)?.name??'Bill', paidAt:item.paidAt, paidAmount:item.paidAmount, status:item.status })), goalContributions: goalContributions.map(item => ({ ...item, name: goals.find(goal => goal.id === item.goalId)?.name ?? 'Goal' })) });
   const briefing = commandCenter.pilot;
   const pilot = briefing.recommendation;
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening';

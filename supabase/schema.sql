@@ -102,6 +102,12 @@ create table if not exists public.bill_occurrences (
   unique(user_id,bill_id,due_date)
 );
 
+create table if not exists public.goal_contributions (
+  id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade,
+  goal_id uuid not null references public.goals(id) on delete cascade, amount numeric(12,2) not null check (amount > 0),
+  contributed_on date not null default current_date, created_at timestamptz not null default now()
+);
+
 create table if not exists public.pilot_recommendation_history (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -119,6 +125,7 @@ alter table public.profiles enable row level security;
 alter table public.debts enable row level security;
 alter table public.bills enable row level security;
 alter table public.goals enable row level security;
+alter table public.goal_contributions enable row level security;
 alter table public.vehicle_scenarios enable row level security;
 alter table public.financial_snapshots enable row level security;
 alter table public.pilot_recommendation_history enable row level security;
@@ -128,6 +135,10 @@ drop policy if exists "Users manage own profile" on public.profiles;
 drop policy if exists "Users manage own debts" on public.debts;
 drop policy if exists "Users manage own bills" on public.bills;
 drop policy if exists "Users manage own goals" on public.goals;
+drop policy if exists "Users select own goal contributions" on public.goal_contributions;
+drop policy if exists "Users insert own goal contributions" on public.goal_contributions;
+drop policy if exists "Users update own goal contributions" on public.goal_contributions;
+drop policy if exists "Users delete own goal contributions" on public.goal_contributions;
 drop policy if exists "Users manage own vehicle scenarios" on public.vehicle_scenarios;
 drop policy if exists "Users manage own financial snapshots" on public.financial_snapshots;
 drop policy if exists "Users select own pilot recommendation history" on public.pilot_recommendation_history;
@@ -142,6 +153,10 @@ create policy "Users manage own profile" on public.profiles for all using ((sele
 create policy "Users manage own debts" on public.debts for all using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 create policy "Users manage own bills" on public.bills for all using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 create policy "Users manage own goals" on public.goals for all using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "Users select own goal contributions" on public.goal_contributions for select to authenticated using ((select auth.uid()) = user_id);
+create policy "Users insert own goal contributions" on public.goal_contributions for insert to authenticated with check ((select auth.uid()) = user_id);
+create policy "Users update own goal contributions" on public.goal_contributions for update to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "Users delete own goal contributions" on public.goal_contributions for delete to authenticated using ((select auth.uid()) = user_id);
 create policy "Users manage own vehicle scenarios" on public.vehicle_scenarios for all using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 create policy "Users manage own financial snapshots" on public.financial_snapshots for all using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 create policy "Users select own pilot recommendation history" on public.pilot_recommendation_history for select to authenticated using ((select auth.uid()) = user_id);
@@ -155,6 +170,7 @@ create policy "Users delete own bill occurrences" on public.bill_occurrences for
 create index if not exists debts_user_id_idx on public.debts(user_id);
 create index if not exists bills_user_id_idx on public.bills(user_id);
 create index if not exists goals_user_id_idx on public.goals(user_id);
+create index if not exists goal_contributions_user_goal_date_idx on public.goal_contributions(user_id,goal_id,contributed_on desc);
 create index if not exists vehicle_scenarios_user_id_idx on public.vehicle_scenarios(user_id);
 create index if not exists financial_snapshots_user_id_snapshot_date_idx on public.financial_snapshots(user_id, snapshot_date);
 create index if not exists pilot_recommendation_history_user_completed_idx on public.pilot_recommendation_history(user_id, completed_at desc);
