@@ -1,4 +1,4 @@
-export type FinancialTimelineEventType = 'bill' | 'paycheck' | 'debt_payment' | 'goal_contribution' | 'scheduled_transaction' | 'scenario_transaction';
+export type FinancialTimelineEventType = 'income' | 'bill' | 'paycheck' | 'debt_payment' | 'goal_contribution' | 'scheduled_transaction' | 'scenario_transaction';
 
 export type FinancialTimelineSourceEvent = {
   id: string;
@@ -17,6 +17,7 @@ export type FinancialTimelineInput = {
   currentCheckingBalance: number;
   protectedCheckingCushion: number;
   bills?: readonly FinancialTimelineSourceEvent[];
+  income?: readonly FinancialTimelineSourceEvent[];
   paychecks?: readonly FinancialTimelineSourceEvent[];
   debtPayments?: readonly FinancialTimelineSourceEvent[];
   goalContributions?: readonly FinancialTimelineSourceEvent[];
@@ -83,6 +84,7 @@ function typed(input: FinancialTimelineInput) {
   let inputOrder = 0;
   const add = (events: readonly FinancialTimelineSourceEvent[] | undefined, type: FinancialTimelineEventType) => (events ?? []).map(event => ({ ...event, type, inputOrder: inputOrder++ }));
   return [
+    ...add(input.income, 'income'),
     ...add(input.paychecks, 'paycheck'),
     ...add(input.bills, 'bill'),
     ...add(input.debtPayments, 'debt_payment'),
