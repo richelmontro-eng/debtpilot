@@ -1,6 +1,7 @@
 import { createRecurringTimelineEvents, type PilotSourceEvent } from './events';
 import { PilotEngine } from './simulator';
 import type { PilotEngineInput, PilotEngineResult } from './types';
+import type { PilotReconciliationContext } from './reconciliation';
 import { maximumPrincipalForPayment, monthlyLoanPayment, type VehicleScenario } from '../vehicle';
 
 export type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
@@ -21,6 +22,7 @@ export type VehicleAdvisorFinances = {
   debtPayments: readonly DatedDebtPayment[];
   plannedGoalContributions: readonly PlannedGoalContribution[];
   existingVehicleMonthly: number;
+  reconciliation?: PilotReconciliationContext;
 };
 
 export type VehiclePurchaseScenario = VehicleScenario & { purchaseDate: string };
@@ -53,7 +55,7 @@ export type VehicleAdvisorResult = {
   };
   loan: { amountFinanced: number; monthlyPayment: number; monthlyOwnershipCost: number; cashAtPurchase: number; totalInterest: number };
   assumptions: string[];
-  confidence: { score: number; level: 'high' | 'medium' };
+  confidence: { score: number; level: 'high' | 'medium' | 'low' };
   calculation: string;
 };
 
@@ -93,7 +95,7 @@ function buildBaselineInput(finances: VehicleAdvisorFinances, endDate: string): 
   const existingVehicle = finances.existingVehicleMonthly > 0
     ? recurringObligation({ id: 'existing-vehicle', name: 'Existing vehicle obligation', amount: finances.existingVehicleMonthly, dueDay: 1 }, finances.startDate, endDate)
     : [];
-  return { startDate: finances.startDate, endDate, currentCheckingBalance: finances.currentCheckingBalance, protectedCheckingCushion: finances.protectedCheckingCushion, paychecks, bills, debtPayments, goalContributions: goals, scheduledTransactions: [...living, ...existingVehicle] };
+  return { startDate: finances.startDate, endDate, currentCheckingBalance: finances.currentCheckingBalance, protectedCheckingCushion: finances.protectedCheckingCushion, paychecks, bills, debtPayments, goalContributions: goals, scheduledTransactions: [...living, ...existingVehicle], reconciliation: finances.reconciliation };
 }
 
 function loanDetails(scenario: VehiclePurchaseScenario) {

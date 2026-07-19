@@ -1,6 +1,7 @@
 import type { CashFlowWarning, FinancialTimelineInput, FinancialTimelineSummary, ProjectedTimelineEvent } from '../financial-timeline-engine';
+import type { PilotReconciliationContext, ReconciliationConfidence, ReconciliationSummary } from './reconciliation';
 
-export type PilotEngineInput = FinancialTimelineInput;
+export type PilotEngineInput = FinancialTimelineInput & { reconciliation?: PilotReconciliationContext };
 export type PilotTimelineEvent = ProjectedTimelineEvent;
 export type PilotWarning = CashFlowWarning;
 
@@ -34,7 +35,7 @@ export type PilotStatistics = {
 
 export type PilotConfidence = {
   score: number;
-  level: 'high' | 'medium';
+  level: 'high' | 'medium' | 'low';
   basis: string[];
 };
 
@@ -45,4 +46,6 @@ export type PilotEngineResult = {
   recommendations: PilotRecommendation[];
   statistics: PilotStatistics;
   confidence: PilotConfidence;
+  reconciliation: ReconciliationSummary;
+  forecastConfidence: ReconciliationConfidence;
 };

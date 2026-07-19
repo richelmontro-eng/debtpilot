@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Car, CircleDollarSign, Save, ShieldCheck, Trash2 } from 'lucide-react';
-import { adviseVehicle, type DatedBill, type DatedDebtPayment, type PayFrequency, type VehicleAdvisorFinances, type VehiclePurchaseScenario } from '@/lib/pilot-engine';
+import { adviseVehicle, type DatedBill, type DatedDebtPayment, type PayFrequency, type PaycheckReconciliation, type VehicleAdvisorFinances, type VehiclePurchaseScenario } from '@/lib/pilot-engine';
 import { createClient } from '@/lib/supabase';
 import type { VehicleScenario } from '@/lib/vehicle';
 
@@ -30,11 +30,13 @@ export default function VehiclePlannerPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.assign('/login'); return; }
       setUserId(user.id);
-      const [profileResult, billResult, debtResult, vehicleResult] = await Promise.all([
+      const [profileResult, billResult, debtResult, vehicleResult, paycheckResult, balanceResult] = await Promise.all([
         supabase.from('profiles').select('*').eq('user_id', user.id).maybeSingle(),
         supabase.from('bills').select('id,name,amount,due_day,frequency').eq('user_id', user.id),
         supabase.from('debts').select('id,name,minimum_payment,due_day').eq('user_id', user.id),
         supabase.from('vehicle_scenarios').select('*').eq('user_id', user.id).order('created_at'),
+        supabase.from('paycheck_events').select('*').eq('user_id', user.id),
+        supabase.from('checking_balance_reconciliations').select('*').eq('user_id', user.id).order('confirmed_at', { ascending: false }).limit(1).maybeSingle(),
       ]);
       if (profileResult.error || billResult.error || debtResult.error || vehicleResult.error) setMessage('We couldn’t load all of your planning details. Review the assumptions before relying on this projection.');
       const profile = profileResult.data;
@@ -42,9 +44,15 @@ export default function VehiclePlannerPage() {
         ...current,
         currentCheckingBalance: Number(profile?.checking_balance ?? 0), protectedCheckingCushion: Number(profile?.checking_cushion ?? 0),
         payPerCheck: Number(profile?.weekly_take_home ?? 0), payFrequency: (profile?.pay_frequency ?? 'weekly') as PayFrequency,
+        firstPaycheckDate: profile?.next_paycheck_date ?? current.firstPaycheckDate,
         livingReservePerCheck: Number(profile?.weekly_living_reserve ?? 0),
         bills: (billResult.data ?? []).map(row => ({ id: row.id, name: row.name, amount: Number(row.amount), dueDay: Number(row.due_day ?? 1), frequency: row.frequency ?? 'monthly' })) as DatedBill[],
         debtPayments: (debtResult.data ?? []).map(row => ({ id: row.id, name: row.name, amount: Number(row.minimum_payment), dueDay: Number(row.due_day ?? 1) })) as DatedDebtPayment[],
+        reconciliation: paycheckResult.error || balanceResult.error ? undefined : {
+          asOfDate: new Date().toISOString().slice(0, 10),
+          paycheckEvents: (paycheckResult.data ?? []).map(row => ({ id: row.id, expectedDate: row.expected_date, expectedAmount: Number(row.expected_amount), status: row.status, actualAmount: row.actual_amount === null ? null : Number(row.actual_amount), confirmedAt: row.confirmed_at, note: row.note })) as PaycheckReconciliation[],
+          latestBalance: balanceResult.data ? { id: balanceResult.data.id, calculatedBalance: Number(balanceResult.data.calculated_balance), confirmedBalance: Number(balanceResult.data.confirmed_balance), variance: Number(balanceResult.data.variance), confirmedAt: balanceResult.data.confirmed_at } : null,
+        },
       }));
       setSavedVehicles((vehicleResult.data ?? []).map(row => ({ id: row.id, name: row.name, price: Number(row.price), downPayment: Number(row.down_payment), tradeIn: Number(row.trade_in), taxRate: Number(row.tax_rate), fees: Number(row.fees), apr: Number(row.apr), termMonths: Number(row.term_months), insuranceMonthly: Number(row.insurance_monthly), fuelMonthly: Number(row.fuel_monthly), maintenanceMonthly: Number(row.maintenance_monthly) })));
       setLoading(false);
@@ -81,7 +89,7 @@ export default function VehiclePlannerPage() {
         <label className="mt-5 block text-xs text-slate-400">Scenario name<input className="field mt-1 w-full" value={name} onChange={event => setName(event.target.value)}/></label>
         <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><DateField label="Projected purchase date" value={scenario.purchaseDate} onChange={value => setScenario(current => ({ ...current, purchaseDate: value }))}/><DateField label="Next expected paycheck" value={finances.firstPaycheckDate} onChange={value => setFinances(current => ({ ...current, firstPaycheckDate: value }))}/><NumberField label="Purchase price" value={scenario.price} onChange={value => update('price', value)}/><NumberField label="Down payment" value={scenario.downPayment} onChange={value => update('downPayment', value)}/><NumberField label="Trade-in value" value={scenario.tradeIn} onChange={value => update('tradeIn', value)}/><NumberField label="Sales tax %" value={scenario.taxRate} onChange={value => update('taxRate', value)} step="0.01"/><NumberField label="Fees paid at purchase" value={scenario.fees} onChange={value => update('fees', value)}/><NumberField label="APR %" value={scenario.apr} onChange={value => update('apr', value)} step="0.01"/><NumberField label="Loan term in months" value={scenario.termMonths} onChange={value => update('termMonths', value)}/><NumberField label="Insurance per month" value={scenario.insuranceMonthly} onChange={value => update('insuranceMonthly', value)}/><NumberField label="Fuel per month" value={scenario.fuelMonthly} onChange={value => update('fuelMonthly', value)}/><NumberField label="Maintenance per month" value={scenario.maintenanceMonthly} onChange={value => update('maintenanceMonthly', value)}/><NumberField label="Existing vehicle obligations per month" value={finances.existingVehicleMonthly} onChange={value => setFinances(current => ({ ...current, existingVehicleMonthly: Math.max(0, value) }))}/></div>
       </div>
-      <div className={`rounded-3xl border p-6 ${tone}`}><p className="text-xs font-semibold uppercase tracking-[0.2em]">Vehicle Coach</p><h2 className="mt-3 text-4xl font-semibold">{advisor.coach.rating}</h2><p className="mt-5 text-base leading-7">{advisor.coach.explanation}</p><p className="mt-5 text-sm">{advisor.scenario.underfundedBills.length ? `${advisor.scenario.underfundedBills.length} bill${advisor.scenario.underfundedBills.length === 1 ? '' : 's'} may be underfunded in this projection.` : 'All modeled bills remain funded.'}</p></div>
+      <div className={`rounded-3xl border p-6 ${tone}`}><p className="text-xs font-semibold uppercase tracking-[0.2em]">Vehicle Coach</p><h2 className="mt-3 text-4xl font-semibold">{advisor.coach.rating}</h2><p className="mt-5 text-base leading-7">{advisor.coach.explanation}</p><p className="mt-5 text-sm">{advisor.scenario.underfundedBills.length ? `${advisor.scenario.underfundedBills.length} bill${advisor.scenario.underfundedBills.length === 1 ? '' : 's'} may be underfunded in this projection.` : 'All modeled bills remain funded.'}</p>{advisor.scenarioForecast.reconciliation.disclosures.map(disclosure => <p key={disclosure} className="mt-3 rounded-xl border border-current/20 p-3 text-sm">{disclosure}</p>)}</div>
     </section>
 
     <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-900 p-6"><h2 className="text-2xl font-semibold">Baseline vs vehicle scenario</h2><p className="mt-2 text-sm text-slate-400">All values are projected from dated cash events.</p><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-slate-500"><tr><th className="pb-3">90-day measure</th><th className="pb-3">Baseline</th><th className="pb-3">With vehicle</th></tr></thead><tbody className="divide-y divide-slate-800"><CompareRow label="Lowest projected checking" before={money.format(advisor.baseline.lowestBalance)} after={money.format(advisor.scenario.lowestBalance)}/><CompareRow label="Dates below protected cushion" before={`${advisor.baseline.belowCushionDates.length}`} after={`${advisor.scenario.belowCushionDates.length}`}/><CompareRow label="Negative-balance dates" before={`${advisor.baseline.negativeBalanceDates.length}`} after={`${advisor.scenario.negativeBalanceDates.length}`}/><CompareRow label="Recovery date after shortfall" before={displayDate(advisor.baseline.recoveryDate)} after={displayDate(advisor.scenario.recoveryDate)}/><CompareRow label="Bills projected underfunded" before={`${advisor.baseline.underfundedBills.length}`} after={`${advisor.scenario.underfundedBills.length}`}/><CompareRow label="Projected cash-flow health" before={`${advisor.baseline.health}/100`} after={`${advisor.scenario.health}/100`}/></tbody></table></div></section>

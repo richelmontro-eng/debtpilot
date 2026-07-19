@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase';
 import { getRecommendationId, type CompletedRecommendation, type PilotCategory } from '@/lib/pilot';
 import { buildCommandCenter, getSafeDashboardError } from '@/lib/intelligence';
 import PilotReasoning from '@/components/pilot-reasoning';
+import { PilotCheckIn } from '@/components/pilot-check-in';
 import { analyzePromotion, promotionStatusLabel } from '@/lib/promotions';
 import { getSafeBillSaveMessage, logBillSaveError, validateOnboardingBill } from '@/lib/onboarding-bills';
 import { mapDebtRow, optionalNumber, saveDebts, type PersistedDebt } from '@/lib/debt-persistence';
@@ -355,7 +356,9 @@ export default function Home() {
 
     {notice && <div role="status" aria-live="polite" className="mb-5 flex flex-col gap-3 rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm text-slate-300 sm:flex-row sm:items-center sm:justify-between"><p>{notice}</p>{loadFailed && <button type="button" onClick={() => window.location.reload()} className="rounded-lg border border-cyan-400/30 px-3 py-2 font-medium text-cyan-300 outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Retry briefing</button>}</div>}
 
-    <section className="overflow-hidden rounded-3xl border border-cyan-400/25 bg-gradient-to-br from-cyan-400/15 via-slate-900 to-slate-900 p-7 sm:p-9">
+    <PilotCheckIn/>
+
+    <section className="mt-6 overflow-hidden rounded-3xl border border-cyan-400/25 bg-gradient-to-br from-cyan-400/15 via-slate-900 to-slate-900 p-7 sm:p-9">
       <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
         <div><p className="text-sm font-medium text-cyan-300">{greeting}{displayName ? `, ${displayName}` : ''}</p><h2 className="mt-3 text-3xl font-semibold sm:text-4xl">Your financial briefing</h2><p className="mt-4 max-w-3xl text-lg leading-8 text-slate-300">{briefingSummary.summary}</p><p className={`mt-4 inline-flex rounded-full border px-3 py-1.5 text-sm ${briefingSummary.cashRisk ? 'border-amber-400/30 bg-amber-400/10 text-amber-200' : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'}`}>{briefingSummary.cashMessage}</p></div>
         <div className="flex items-center gap-4 rounded-2xl border border-slate-700/80 bg-slate-950/60 p-5"><div role="img" aria-label={`Financial health ${briefing.pulse.score} out of 100`} className="grid h-20 w-20 place-items-center rounded-full border-4 border-cyan-400/70 bg-slate-900"><span className="text-2xl font-semibold">{briefing.pulse.score}</span></div><div><p className="text-xs uppercase tracking-widest text-slate-500">Financial health</p><p className="mt-1 text-xl font-semibold text-cyan-300">{briefing.pulse.label}</p></div></div>
