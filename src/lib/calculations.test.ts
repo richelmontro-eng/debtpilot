@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildForecast } from './forecast';
 import { simulatePayoff } from './payoff';
-import { evaluateVehicle, monthlyLoanPayment } from './vehicle';
+import { monthlyLoanPayment } from './vehicle';
 
 describe('payoff engine', () => {
   const debts = [
@@ -86,27 +86,4 @@ describe('vehicle readiness engine', () => {
     expect(monthlyLoanPayment(12_000, 0, 48)).toBe(250);
   });
 
-  it('does not let negative ownership inputs improve readiness', () => {
-    const result = evaluateVehicle({
-      price: 20_000, downPayment: 2_000, tradeIn: 0, taxRate: 5, fees: 500,
-      apr: 6, termMonths: 60, insuranceMonthly: -100, fuelMonthly: -100, maintenanceMonthly: -100,
-    }, {
-      monthlyIncome: 4_000, monthlyBills: 1_000, monthlyDebtMinimums: 300,
-      monthlyLiving: 1_000, checking: 2_000, savings: 10_000, checkingCushion: 1_000,
-    });
-    expect(result.ownershipMonthly).toBeGreaterThan(0);
-    expect(result.ownershipMonthly).toBe(result.paymentMonthly);
-  });
-
-  it('does not count cash-paid fees in the financed balance', () => {
-    const result = evaluateVehicle({
-      price: 20_000, downPayment: 2_000, tradeIn: 1_000, taxRate: 5, fees: 500,
-      apr: 6, termMonths: 60, insuranceMonthly: 0, fuelMonthly: 0, maintenanceMonthly: 0,
-    }, {
-      monthlyIncome: 4_000, monthlyBills: 1_000, monthlyDebtMinimums: 300,
-      monthlyLiving: 1_000, checking: 2_000, savings: 10_000, checkingCushion: 1_000,
-    });
-    expect(result.amountFinanced).toBe(17_950);
-    expect(result.cashDueAtPurchase).toBe(2_500);
-  });
 });

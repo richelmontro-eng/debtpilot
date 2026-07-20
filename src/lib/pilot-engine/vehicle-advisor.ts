@@ -1,10 +1,13 @@
+import { analyzePilotTimeline, compareTimelineStrength, isTimelineProtected, type PilotTimelineAnalysis } from './analysis';
 import { createRecurringTimelineEvents, type PilotSourceEvent } from './events';
+import type { PilotReconciliationContext } from './reconciliation';
 import { PilotEngine } from './simulator';
 import type { PilotEngineInput, PilotEngineResult } from './types';
-import type { PilotReconciliationContext } from './reconciliation';
-import { maximumPrincipalForPayment, monthlyLoanPayment, type VehicleScenario } from '../vehicle';
+import { monthlyLoanPayment, type VehicleScenario } from '../vehicle';
 
 export type PayFrequency = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
+export type VehiclePaymentDay = 1 | 10 | 15 | 22 | 'last';
+type CalendarDay = number | 'last';
 export type DatedBill = { id: string; name: string; amount: number; dueDay: number; frequency: 'weekly' | 'monthly' | 'quarterly' | 'annual' };
 export type DatedDebtPayment = { id: string; name: string; amount: number; dueDay: number };
 export type PlannedGoalContribution = { id: string; name: string; amount: number; firstDate: string; cadence?: PayFrequency };
@@ -25,63 +28,81 @@ export type VehicleAdvisorFinances = {
   reconciliation?: PilotReconciliationContext;
 };
 
-export type VehiclePurchaseScenario = VehicleScenario & { purchaseDate: string };
-export type ForecastSnapshot = {
-  lowestBalance: number;
-  belowCushionDates: string[];
-  negativeBalanceDates: string[];
-  recoveryDate: string | null;
-  balances: { day30: number; day60: number; day90: number };
-  underfundedBills: { id: string; name: string; date: string }[];
-  health: number;
+export type VehiclePurchaseScenario = VehicleScenario & {
+  purchaseDate: string;
+  firstPaymentDate: string;
+  preferredPaymentDay?: VehiclePaymentDay;
+  registrationAnnual: number;
 };
 
+export type VehicleRecommendation = 'Buy Now' | 'Wait Until Next Paycheck' | 'Increase Down Payment' | 'Reduce Vehicle Budget' | 'Move Payment Date' | 'Delay Purchase';
+
 export type VehicleAdvisorResult = {
-  baseline: ForecastSnapshot;
-  scenario: ForecastSnapshot;
+  baseline: PilotTimelineAnalysis;
+  scenario: PilotTimelineAnalysis;
   baselineForecast: PilotEngineResult;
   scenarioForecast: PilotEngineResult;
-  coach: {
-    rating: 'Strong fit' | 'Affordable with caution' | 'Wait' | 'Reconsider';
-    explanation: string;
+  recommendation: VehicleRecommendation;
+  explanation: string;
+  loan: { amountFinanced: number; recurringPayment: number; cashAtPurchase: number; totalInterest: number };
+  recommendedPurchaseDate: string;
+  recommendedPaymentDate: VehiclePaymentDay;
+  recommendedDownPayment: number;
+  recommendedVehicleBudget: number;
+  paymentDateAnalysis: {
+    bestPaymentDate: VehiclePaymentDay;
+    reason: string;
+    protectedCushionImpact: number;
+    options: { paymentDay: VehiclePaymentDay; analysis: PilotTimelineAnalysis }[];
   };
-  realityCheck: {
-    affordablePriceLow: number;
-    affordablePriceHigh: number;
-    maximumSafeMonthlyPayment: number;
-    additionalDownPaymentNeeded: number;
-    lowerPriceAlternative: number;
-    estimatedWaitMonths: number | null;
+  downPaymentAnalysis: {
+    current: number;
+    recommended: number;
+    difference: number;
+    preventsNegativeBalance: boolean;
+    protectsCushion: boolean;
+    preservesDebtStrategy: boolean;
+    preservesGoals: boolean;
   };
-  loan: { amountFinanced: number; monthlyPayment: number; monthlyOwnershipCost: number; cashAtPurchase: number; totalInterest: number };
+  waitAnalysis: {
+    options: { label: string; purchaseDate: string; endingBalanceChange: number; analysis: PilotTimelineAnalysis }[];
+    strongestLabel: string;
+    reason: string;
+  };
+  confidence: PilotEngineResult['forecastConfidence'];
   assumptions: string[];
-  confidence: { score: number; level: 'high' | 'medium' | 'low' };
   calculation: string;
 };
 
 const DAY = 86_400_000;
 const round = (value: number) => Math.round(value * 100) / 100;
-const date = (value: string) => new Date(`${value.slice(0, 10)}T00:00:00Z`);
+const parse = (value: string) => new Date(`${value.slice(0, 10)}T00:00:00Z`);
 const iso = (value: Date) => value.toISOString().slice(0, 10);
-const addDays = (value: string, days: number) => iso(new Date(date(value).getTime() + days * DAY));
+const addDays = (value: string, days: number) => iso(new Date(parse(value).getTime() + days * DAY));
+const daysBetween = (later: string, earlier: string) => Math.round((parse(later).getTime() - parse(earlier).getTime()) / DAY);
 
-function nextMonthlyDate(startDate: string, dueDay: number) {
-  const start = date(startDate);
-  const candidate = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), Math.min(28, Math.max(1, dueDay))));
-  if (candidate < start) candidate.setUTCMonth(candidate.getUTCMonth() + 1);
-  return iso(candidate);
+function lastDay(year: number, month: number) { return new Date(Date.UTC(year, month + 1, 0)).getUTCDate(); }
+function dateForMonth(year: number, month: number, day: CalendarDay) {
+  const actualDay = day === 'last' ? lastDay(year, month) : Math.min(day, lastDay(year, month));
+  return new Date(Date.UTC(year, month, actualDay));
+}
+
+function monthlyDates(firstDate: string, endDate: string, preferredDay?: CalendarDay) {
+  const first = parse(firstDate), end = parse(endDate);
+  const day = preferredDay ?? Math.min(first.getUTCDate(), 28);
+  let cursor = dateForMonth(first.getUTCFullYear(), first.getUTCMonth(), day);
+  if (cursor < first) cursor = dateForMonth(first.getUTCFullYear(), first.getUTCMonth() + 1, day);
+  const dates: string[] = [];
+  while (cursor <= end) {
+    dates.push(iso(cursor));
+    cursor = dateForMonth(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, day);
+  }
+  return dates;
 }
 
 function recurringObligation(item: { id: string; name: string; amount: number; dueDay: number }, startDate: string, endDate: string, months = 1): PilotSourceEvent[] {
-  const cursor = date(nextMonthlyDate(startDate, item.dueDay));
-  const end = date(endDate);
-  const events: PilotSourceEvent[] = [];
-  let index = 0;
-  while (cursor <= end) {
-    events.push({ id: `${item.id}-${++index}`, name: item.name, amount: -Math.max(0, item.amount), date: iso(cursor), required: true, metadata: { sourceId: item.id } });
-    cursor.setUTCMonth(cursor.getUTCMonth() + months);
-  }
-  return events;
+  const dates = monthlyDates(startDate, endDate, Math.min(28, Math.max(1, item.dueDay)));
+  return dates.filter((_, index) => index % months === 0).map((date, index) => ({ id: `${item.id}-${index + 1}`, name: item.name, amount: -Math.max(0, item.amount), date, required: true, metadata: { sourceId: item.id } }));
 }
 
 function buildBaselineInput(finances: VehicleAdvisorFinances, endDate: string): PilotEngineInput {
@@ -91,70 +112,64 @@ function buildBaselineInput(finances: VehicleAdvisorFinances, endDate: string): 
     ? createRecurringTimelineEvents({ idPrefix: `bill-${item.id}`, name: item.name, amount: -Math.max(0, item.amount), firstDate: finances.startDate, endDate, cadence: 'weekly', required: true }).map(event => ({ ...event, metadata: { sourceId: item.id } }))
     : recurringObligation({ ...item, id: `bill-${item.id}` }, finances.startDate, endDate, item.frequency === 'quarterly' ? 3 : item.frequency === 'annual' ? 12 : 1));
   const debtPayments = finances.debtPayments.flatMap(item => recurringObligation({ ...item, id: `debt-${item.id}` }, finances.startDate, endDate));
-  const goals = finances.plannedGoalContributions.flatMap(item => createRecurringTimelineEvents({ idPrefix: `goal-${item.id}`, name: item.name, amount: -Math.max(0, item.amount), firstDate: item.firstDate, endDate, cadence: item.cadence ?? 'monthly' }));
-  const existingVehicle = finances.existingVehicleMonthly > 0
-    ? recurringObligation({ id: 'existing-vehicle', name: 'Existing vehicle obligation', amount: finances.existingVehicleMonthly, dueDay: 1 }, finances.startDate, endDate)
-    : [];
+  const goals = finances.plannedGoalContributions.flatMap(item => createRecurringTimelineEvents({ idPrefix: `goal-${item.id}`, name: item.name, amount: -Math.max(0, item.amount), firstDate: item.firstDate, endDate, cadence: item.cadence ?? 'monthly', required: true }).map(event => ({ ...event, metadata: { sourceId: item.id } })));
+  const existingVehicle = finances.existingVehicleMonthly > 0 ? recurringObligation({ id: 'existing-vehicle', name: 'Existing vehicle obligation', amount: finances.existingVehicleMonthly, dueDay: 1 }, finances.startDate, endDate) : [];
   return { startDate: finances.startDate, endDate, currentCheckingBalance: finances.currentCheckingBalance, protectedCheckingCushion: finances.protectedCheckingCushion, paychecks, bills, debtPayments, goalContributions: goals, scheduledTransactions: [...living, ...existingVehicle], reconciliation: finances.reconciliation };
 }
 
-function loanDetails(scenario: VehiclePurchaseScenario) {
-  const tax = Math.max(0, scenario.price - scenario.tradeIn) * Math.max(0, scenario.taxRate) / 100;
-  const amountFinanced = Math.max(0, scenario.price + tax - scenario.downPayment - scenario.tradeIn);
-  const monthlyPayment = monthlyLoanPayment(amountFinanced, scenario.apr, scenario.termMonths);
-  const operating = Math.max(0, scenario.insuranceMonthly) + Math.max(0, scenario.fuelMonthly) + Math.max(0, scenario.maintenanceMonthly);
-  return { amountFinanced, monthlyPayment, monthlyOwnershipCost: monthlyPayment + operating, cashAtPurchase: Math.max(0, scenario.downPayment + scenario.fees), totalInterest: Math.max(0, monthlyPayment * scenario.termMonths - amountFinanced) };
+function financing(scenario: VehiclePurchaseScenario) {
+  const salesTax = Math.max(0, scenario.price - scenario.tradeIn) * Math.max(0, scenario.taxRate) / 100;
+  const amountFinanced = Math.max(0, scenario.price + salesTax - scenario.downPayment - scenario.tradeIn);
+  const recurringPayment = monthlyLoanPayment(amountFinanced, scenario.apr, scenario.termMonths);
+  return {
+    amountFinanced,
+    recurringPayment,
+    cashAtPurchase: Math.max(0, scenario.downPayment + scenario.fees + scenario.registrationAnnual),
+    totalInterest: Math.max(0, recurringPayment * scenario.termMonths - amountFinanced),
+  };
 }
 
-function scenarioEvents(scenario: VehiclePurchaseScenario, endDate: string): PilotSourceEvent[] {
-  const loan = loanDetails(scenario);
-  const firstMonthly = addDays(scenario.purchaseDate, 30);
-  const recurring = [
-    ['loan', 'Vehicle loan payment', loan.monthlyPayment],
-    ['insurance', 'Vehicle insurance', scenario.insuranceMonthly],
-    ['fuel', 'Vehicle fuel', scenario.fuelMonthly],
-    ['maintenance', 'Vehicle maintenance', scenario.maintenanceMonthly],
-  ] as const;
+export function buildVehicleScenarioEvents(scenario: VehiclePurchaseScenario, endDate: string): PilotSourceEvent[] {
+  const loan = financing(scenario);
   const events: PilotSourceEvent[] = [
     { id: 'vehicle-down-payment', name: 'Vehicle down payment', amount: -Math.max(0, scenario.downPayment), date: scenario.purchaseDate, scenarioId: 'vehicle-advisor' },
-    { id: 'vehicle-fees', name: 'Vehicle taxes and fees paid at purchase', amount: -Math.max(0, scenario.fees), date: scenario.purchaseDate, scenarioId: 'vehicle-advisor' },
+    { id: 'vehicle-fees', name: 'Vehicle fees', amount: -Math.max(0, scenario.fees), date: scenario.purchaseDate, scenarioId: 'vehicle-advisor' },
+    { id: 'vehicle-registration-1', name: 'Vehicle registration', amount: -Math.max(0, scenario.registrationAnnual), date: scenario.purchaseDate, scenarioId: 'vehicle-advisor' },
   ];
-  for (const [id, name, amount] of recurring) {
-    events.push(...createRecurringTimelineEvents({ idPrefix: `vehicle-${id}`, name, amount: -Math.max(0, amount), firstDate: firstMonthly, endDate, cadence: 'monthly' }).map(event => ({ ...event, scenarioId: 'vehicle-advisor' })));
+  const monthly = [
+    ['payment', 'Vehicle payment', loan.recurringPayment],
+    ['insurance', 'Vehicle insurance', scenario.insuranceMonthly],
+    ['fuel', 'Vehicle fuel', scenario.fuelMonthly],
+    ['maintenance', 'Vehicle maintenance reserve', scenario.maintenanceMonthly],
+  ] as const;
+  for (const [id, name, amount] of monthly) {
+    for (const [index, eventDate] of monthlyDates(scenario.firstPaymentDate, endDate, scenario.preferredPaymentDay).entries()) {
+      events.push({ id: `vehicle-${id}-${index + 1}`, name, amount: -Math.max(0, amount), date: eventDate, scenarioId: 'vehicle-advisor' });
+    }
+  }
+  const annualDate = parse(scenario.purchaseDate);
+  annualDate.setUTCFullYear(annualDate.getUTCFullYear() + 1);
+  let annualIndex = 2;
+  while (annualDate <= parse(endDate)) {
+    events.push({ id: `vehicle-registration-${annualIndex++}`, name: 'Vehicle registration', amount: -Math.max(0, scenario.registrationAnnual), date: iso(annualDate), scenarioId: 'vehicle-advisor' });
+    annualDate.setUTCFullYear(annualDate.getUTCFullYear() + 1);
   }
   return events;
 }
 
-function balanceOn(result: PilotEngineResult, startingBalance: number, target: string) {
-  return result.timeline.filter(event => event.date.slice(0, 10) <= target).at(-1)?.projectedBalance ?? startingBalance;
+function runVehicleForecast(baselineInput: PilotEngineInput, scenario: VehiclePurchaseScenario) {
+  const input: PilotEngineInput = { ...baselineInput, scenarioTransactions: buildVehicleScenarioEvents(scenario, baselineInput.endDate) };
+  const forecast = PilotEngine.simulate(input);
+  return { forecast, analysis: analyzePilotTimeline(forecast, input) };
 }
 
-function snapshot(result: PilotEngineResult, input: PilotEngineInput, finances: VehicleAdvisorFinances): ForecastSnapshot {
-  const balances = new Map<string, number>();
-  let current = input.currentCheckingBalance;
-  let index = 0;
-  for (let cursor = date(input.startDate); cursor <= date(input.endDate); cursor = new Date(cursor.getTime() + DAY)) {
-    const day = iso(cursor);
-    while (index < result.timeline.length && result.timeline[index].date.slice(0, 10) === day) current = result.timeline[index++].projectedBalance;
-    balances.set(day, current);
-  }
-  const belowCushionDates = [...balances].filter(([, value]) => value < finances.protectedCheckingCushion).map(([day]) => day);
-  const negativeBalanceDates = [...balances].filter(([, value]) => value < 0).map(([day]) => day);
-  const underfundedBills = result.timeline.filter(event => event.type === 'bill' && event.obligationAtRisk).map(event => ({ id: String(event.metadata?.sourceId ?? event.id), name: event.name, date: event.date.slice(0, 10) }));
-  const health = Math.max(0, Math.round(100 - Math.min(55, negativeBalanceDates.length * 5) - Math.min(30, belowCushionDates.length * 2) - underfundedBills.length * 10));
-  return {
-    lowestBalance: round(result.forecast.lowestBalance), belowCushionDates, negativeBalanceDates,
-    recoveryDate: result.forecast.recoveryDate, underfundedBills, health,
-    balances: {
-      day30: round(balanceOn(result, input.currentCheckingBalance, addDays(input.startDate, 30))),
-      day60: round(balanceOn(result, input.currentCheckingBalance, addDays(input.startDate, 60))),
-      day90: round(balanceOn(result, input.currentCheckingBalance, addDays(input.startDate, 90))),
-    },
-  };
+function shiftPurchase(scenario: VehiclePurchaseScenario, purchaseDate: string): VehiclePurchaseScenario {
+  const shift = daysBetween(purchaseDate, scenario.purchaseDate);
+  return { ...scenario, purchaseDate, firstPaymentDate: addDays(scenario.firstPaymentDate, shift) };
 }
 
-function isSafe(result: PilotEngineResult, cushion: number) {
-  return result.forecast.lowestBalance >= cushion && result.forecast.requiredObligationsAtRisk === 0;
+function strongest<T extends { analysis: PilotTimelineAnalysis }>(options: T[]) {
+  return [...options].sort((left, right) => compareTimelineStrength(left.analysis, right.analysis))[0];
 }
 
 function money(value: number) { return Math.abs(Math.round(value)).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }); }
@@ -165,61 +180,90 @@ export function adviseVehicle(finances: VehicleAdvisorFinances, vehicle: Vehicle
   const endDate = addDays(finances.startDate, horizon);
   const baselineInput = buildBaselineInput(finances, endDate);
   const baselineForecast = PilotEngine.simulate(baselineInput);
-  const vehicleEvents = scenarioEvents(vehicle, endDate);
-  const scenarioInput = { ...baselineInput, scenarioTransactions: vehicleEvents };
-  const scenarioForecast = PilotEngine.simulate(scenarioInput);
-  const baseline = snapshot(baselineForecast, baselineInput, finances);
-  const scenario = snapshot(scenarioForecast, scenarioInput, finances);
-  const loan = loanDetails(vehicle);
+  const baseline = analyzePilotTimeline(baselineForecast, baselineInput);
+  const current = runVehicleForecast(baselineInput, vehicle);
+  const paymentDays: VehiclePaymentDay[] = [1, 10, 15, 22, 'last'];
+  const paymentOptions = paymentDays.map(paymentDay => ({ paymentDay, ...runVehicleForecast(baselineInput, { ...vehicle, preferredPaymentDay: paymentDay }) }));
+  const bestPayment = strongest(paymentOptions);
+  const paycheckDates = baselineForecast.timeline.filter(event => event.type === 'paycheck' && event.date.slice(0, 10) >= vehicle.purchaseDate).map(event => event.date.slice(0, 10));
+  const purchaseCandidates = [
+    { label: 'Today', purchaseDate: vehicle.purchaseDate },
+    ...(paycheckDates[0] ? [{ label: 'Next paycheck', purchaseDate: paycheckDates[0] }] : []),
+    ...(paycheckDates[1] ? [{ label: 'Following paycheck', purchaseDate: paycheckDates[1] }] : []),
+    { label: '30 days', purchaseDate: addDays(vehicle.purchaseDate, 30) },
+    { label: '60 days', purchaseDate: addDays(vehicle.purchaseDate, 60) },
+  ].filter((candidate, index, all) => all.findIndex(item => item.purchaseDate === candidate.purchaseDate) === index);
+  const waitOptions = purchaseCandidates.map(candidate => {
+    const result = runVehicleForecast(baselineInput, shiftPurchase(vehicle, candidate.purchaseDate));
+    return { ...candidate, endingBalanceChange: round(result.analysis.projectedEndingBalance - current.analysis.projectedEndingBalance), analysis: result.analysis };
+  });
+  const bestWait = strongest(waitOptions);
 
-  let rating: VehicleAdvisorResult['coach']['rating'];
-  if (scenario.negativeBalanceDates.length && (!scenario.recoveryDate || scenario.underfundedBills.length)) rating = 'Reconsider';
-  else if (scenario.negativeBalanceDates.length || (scenario.belowCushionDates.length && !scenario.recoveryDate)) rating = 'Wait';
-  else if (scenario.belowCushionDates.length) rating = 'Affordable with caution';
-  else rating = 'Strong fit';
-  const firstDip = scenario.belowCushionDates[0];
-  const shortfall = Math.max(0, finances.protectedCheckingCushion - scenario.lowestBalance);
-  const explanation = firstDip
-    ? `This vehicle would push projected checking ${money(shortfall)} below your protected cushion on ${friendlyDate(firstDip)}${scenario.recoveryDate ? `, and it recovers on ${friendlyDate(scenario.recoveryDate)}` : ', without recovering during the forecast'}.`
-    : `Projected checking stays above your protected cushion, with a lowest projected balance of ${money(scenario.lowestBalance)}.`;
+  const downCandidates = Array.from({ length: Math.floor(Math.max(0, vehicle.price) / 500) + 1 }, (_, index) => index * 500);
+  if (!downCandidates.includes(vehicle.downPayment)) downCandidates.push(vehicle.downPayment);
+  const downResults = downCandidates.sort((a, b) => a - b).map(downPayment => ({ downPayment, ...runVehicleForecast(baselineInput, { ...vehicle, downPayment }) }));
+  const protectedDown = downResults.find(result => isTimelineProtected(result.analysis));
+  const recommendedDownPayment = protectedDown?.downPayment ?? vehicle.downPayment;
+  const recommendedDownResult = downResults.find(result => result.downPayment === recommendedDownPayment) ?? current;
 
-  const operating = Math.max(0, vehicle.insuranceMonthly) + Math.max(0, vehicle.fuelMonthly) + Math.max(0, vehicle.maintenanceMonthly);
-  let low = 0;
-  let high = Math.max(10_000, loan.monthlyPayment * 2 + 2_000);
-  for (let iteration = 0; iteration < 32; iteration += 1) {
-    const candidate = (low + high) / 2;
-    const candidateEvents = scenarioEvents({ ...vehicle, price: 0, downPayment: vehicle.downPayment, tradeIn: 0, fees: vehicle.fees, insuranceMonthly: 0, fuelMonthly: 0, maintenanceMonthly: 0 }, endDate)
-      .filter(event => !event.id.startsWith('vehicle-loan'));
-    candidateEvents.push(...createRecurringTimelineEvents({ idPrefix: 'safe-payment', name: 'Maximum safe vehicle payment', amount: -Math.max(0, candidate + operating), firstDate: addDays(vehicle.purchaseDate, 30), endDate, cadence: 'monthly' }).map(event => ({ ...event, scenarioId: 'vehicle-advisor' })));
-    const candidateResult = PilotEngine.simulate({ ...baselineInput, scenarioTransactions: candidateEvents });
-    if (isSafe(candidateResult, finances.protectedCheckingCushion)) low = candidate; else high = candidate;
-  }
-  const maximumSafeMonthlyPayment = round(low);
-  const maximumLoanAmount = maximumPrincipalForPayment(maximumSafeMonthlyPayment, vehicle.apr, vehicle.termMonths);
-  const taxRate = Math.max(0, vehicle.taxRate) / 100;
-  const affordablePriceHigh = Math.max(0, (maximumLoanAmount + vehicle.downPayment + vehicle.tradeIn * (1 + taxRate)) / (1 + taxRate));
-  const additionalDownPaymentNeeded = Math.max(0, loan.amountFinanced - maximumLoanAmount);
+  const priceCandidates = Array.from({ length: 20 }, (_, index) => round(vehicle.price * (1 - index * 0.05))).filter(price => price >= 0);
+  const priceResults = priceCandidates.map(price => ({ price, ...runVehicleForecast(baselineInput, { ...vehicle, price }) }));
+  const protectedBudget = priceResults.find(result => isTimelineProtected(result.analysis));
+  const recommendedVehicleBudget = protectedBudget?.price ?? priceResults.at(-1)?.price ?? vehicle.price;
 
-  let estimatedWaitMonths: number | null = rating === 'Strong fit' ? 0 : null;
-  if (estimatedWaitMonths === null) {
-    for (let month = 1; month <= 24; month += 1) {
-      const shifted = { ...vehicle, purchaseDate: addDays(vehicle.purchaseDate, month * 30) };
-      const shiftedEnd = addDays(shifted.purchaseDate, 90);
-      const shiftedBaseline = buildBaselineInput(finances, shiftedEnd);
-      if (isSafe(PilotEngine.simulate({ ...shiftedBaseline, scenarioTransactions: scenarioEvents(shifted, shiftedEnd) }), finances.protectedCheckingCushion)) { estimatedWaitMonths = month; break; }
-    }
-  }
+  let recommendation: VehicleRecommendation;
+  if (isTimelineProtected(current.analysis)) recommendation = 'Buy Now';
+  else if (isTimelineProtected(bestPayment.analysis)) recommendation = 'Move Payment Date';
+  else if (bestWait.label === 'Next paycheck' && isTimelineProtected(bestWait.analysis)) recommendation = 'Wait Until Next Paycheck';
+  else if (recommendedDownPayment > vehicle.downPayment && isTimelineProtected(recommendedDownResult.analysis)) recommendation = 'Increase Down Payment';
+  else if (recommendedVehicleBudget < vehicle.price && protectedBudget) recommendation = 'Reduce Vehicle Budget';
+  else recommendation = 'Delay Purchase';
+
+  const firstBreach = current.analysis.belowCushionDates[0];
+  const recovery = current.forecast.forecast.recoveryDate;
+  const explanation = isTimelineProtected(current.analysis)
+    ? `Buying on ${friendlyDate(vehicle.purchaseDate)} keeps every modeled obligation funded and checking above the protected cushion.`
+    : firstBreach
+      ? `Buying on ${friendlyDate(vehicle.purchaseDate)} causes a ${current.analysis.daysBelowCushion}-day protected-cushion breach beginning ${friendlyDate(firstBreach)}${recovery ? ` before recovery on ${friendlyDate(recovery)}` : ' without recovery during this forecast'}. ${bestWait.purchaseDate !== vehicle.purchaseDate ? `The strongest tested purchase date is ${friendlyDate(bestWait.purchaseDate)}.` : ''}`
+      : `The proposed schedule interrupts ${current.analysis.billsAtRisk.length + current.analysis.debtStrategyInterruptions.length + current.analysis.goalDelays.length} modeled obligation${current.analysis.billsAtRisk.length + current.analysis.debtStrategyInterruptions.length + current.analysis.goalDelays.length === 1 ? '' : 's'}.`;
+  const loan = financing(vehicle);
 
   return {
-    baseline, scenario, baselineForecast, scenarioForecast,
-    coach: { rating, explanation },
-    realityCheck: {
-      affordablePriceLow: round(affordablePriceHigh * 0.8), affordablePriceHigh: round(affordablePriceHigh), maximumSafeMonthlyPayment,
-      additionalDownPaymentNeeded: round(additionalDownPaymentNeeded), lowerPriceAlternative: round(affordablePriceHigh * 0.9), estimatedWaitMonths,
+    baseline,
+    scenario: current.analysis,
+    baselineForecast,
+    scenarioForecast: current.forecast,
+    recommendation,
+    explanation,
+    loan: { amountFinanced: round(loan.amountFinanced), recurringPayment: round(loan.recurringPayment), cashAtPurchase: round(loan.cashAtPurchase), totalInterest: round(loan.totalInterest) },
+    recommendedPurchaseDate: bestWait.purchaseDate,
+    recommendedPaymentDate: bestPayment.paymentDay,
+    recommendedDownPayment: round(recommendedDownPayment),
+    recommendedVehicleBudget: round(recommendedVehicleBudget),
+    paymentDateAnalysis: {
+      bestPaymentDate: bestPayment.paymentDay,
+      reason: `The ${bestPayment.paymentDay === 'last' ? 'last day of the month' : `${bestPayment.paymentDay}${bestPayment.paymentDay === 1 ? 'st' : bestPayment.paymentDay === 22 ? 'nd' : 'th'}`} produced the strongest tested timeline, with a lowest projected balance of ${money(bestPayment.analysis.lowestBalance)}.`,
+      protectedCushionImpact: round(bestPayment.analysis.lowestBalance - current.analysis.lowestBalance),
+      options: paymentOptions.map(option => ({ paymentDay: option.paymentDay, analysis: option.analysis })),
     },
-    loan: { amountFinanced: round(loan.amountFinanced), monthlyPayment: round(loan.monthlyPayment), monthlyOwnershipCost: round(loan.monthlyOwnershipCost), cashAtPurchase: round(loan.cashAtPurchase), totalInterest: round(loan.totalInterest) },
-    assumptions: ['Every expected paycheck in the forecast is included using the saved pay frequency and next paycheck date.', 'Bills and debt minimums use their saved due days; weekly bills recur every seven days.', 'Living reserve is protected after every paycheck.', 'Sales tax is financed; entered fees and down payment are paid on the purchase date.', 'No future goal contribution is assumed unless a planned contribution schedule is supplied.'],
-    confidence: { score: baselineForecast.confidence.score, level: baselineForecast.confidence.level },
-    calculation: 'DebtPilot builds a dated baseline of paychecks, bills, minimum debt payments, living reserves, planned goal contributions, and existing vehicle costs. It adds the purchase cash and each monthly vehicle cost as temporary events, then reruns the shared Pilot Engine. The safe payment and price range are found by testing payments against the full timeline until checking stays at or above the protected cushion; no income-percentage rule is used.',
+    downPaymentAnalysis: {
+      current: round(vehicle.downPayment),
+      recommended: round(recommendedDownPayment),
+      difference: round(recommendedDownPayment - vehicle.downPayment),
+      preventsNegativeBalance: recommendedDownResult.analysis.negativeBalanceDates.length === 0,
+      protectsCushion: recommendedDownResult.analysis.protectedCushionMaintained,
+      preservesDebtStrategy: recommendedDownResult.analysis.debtStrategyPreserved,
+      preservesGoals: recommendedDownResult.analysis.goalsPreserved,
+    },
+    waitAnalysis: {
+      options: waitOptions,
+      strongestLabel: bestWait.label,
+      reason: bestWait.purchaseDate === vehicle.purchaseDate
+        ? 'Buying on the entered date produced the strongest tested timeline.'
+        : `Waiting until ${friendlyDate(bestWait.purchaseDate)} changes the projected ending balance by ${bestWait.endingBalanceChange >= 0 ? '+' : '-'}${money(bestWait.endingBalanceChange)} and produces the strongest tested cash-flow timeline.`,
+    },
+    confidence: current.forecast.forecastConfidence,
+    assumptions: ['Every expected paycheck in the forecast uses its dated Pilot Engine status.', 'Bills, debt payments, goals, and vehicle costs are evaluated in chronological order.', 'Sales tax is financed; down payment, fees, and initial registration are checking-account events.', 'Insurance, fuel, maintenance, and loan payments begin on the entered first-payment schedule.', 'Optimization compares the 1st, 10th, 15th, 22nd, and last day of each month.'],
+    calculation: 'DebtPilot creates temporary dated vehicle events, runs an ordinary Pilot Engine forecast, and compares the resulting timelines. Recommendations come from negative dates, protected-cushion days, obligations at risk, lowest balance, and ending balance. No monthly-income ratio or normalized monthly affordability calculation is used.',
   };
 }

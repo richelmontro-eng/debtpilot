@@ -5,3 +5,4 @@ export * from './forecast';
 export * from './simulator';
 export * from './vehicle-advisor';
 export * from './reconciliation';
+export * from './analysis';

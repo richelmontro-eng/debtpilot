@@ -75,6 +75,10 @@ create table if not exists public.vehicle_scenarios (
   insurance_monthly numeric(12,2) not null default 0,
   fuel_monthly numeric(12,2) not null default 0,
   maintenance_monthly numeric(12,2) not null default 0,
+  registration_annual numeric(12,2) not null default 0 check (registration_annual >= 0),
+  purchase_date date,
+  first_payment_date date,
+  preferred_payment_day integer check (preferred_payment_day is null or preferred_payment_day in (1,10,15,22,31)),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
